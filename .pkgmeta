@@ -1,0 +1,23 @@
+package-as: VilinkasInsanity
+
+externals:
+    libs/LibStub:
+        url: https://repos.wowace.com/wow/libstub/trunk
+    libs/CallbackHandler-1.0:
+        url: https://repos.wowace.com/wow/callbackhandler/trunk/CallbackHandler-1.0
+    libs/AceDB-3.0:
+        url: https://repos.wowace.com/wow/ace3/trunk/AceDB-3.0
+    libs/LibSharedMedia-3.0:
+        url: https://repos.wowace.com/wow/libsharedmedia-3-0/trunk/LibSharedMedia-3.0
+	libs/LibArtifactData-1.0: https://github.com/Rainrider/LibArtifactData-1.0.git
+    Options/libs/AceGUI-3.0:
+        url: https://repos.wowace.com/wow/ace3/trunk/AceGUI-3.0
+    Options/libs/AceGUI-3.0-SharedMediaWidgets:
+        url: https://repos.wowace.com/wow/ace-gui-3-0-shared-media-widgets/trunk/AceGUI-3.0-SharedMediaWidgets
+    Options/libs/AceConfig-3.0:
+        url: https://repos.wowace.com/wow/ace3/trunk/AceConfig-3.0
+
+enable-nolib-creation: no
+
+move-folders:
+    VilinkasInsanity/Options/: VilinkasInsanityOptions

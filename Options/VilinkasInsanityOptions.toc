@@ -1,0 +1,15 @@
+## Interface: 70300
+## Author: Vilinka
+## Version: @project-version@
+## Title: Vilinka's Insanity Options
+## Notes: Vilinka's Insanity Options
+## SavedVariables: VilinkasInsanityOptionsDB
+## DefaultState: Enabled
+## Dependencies: VilinkasInsanity
+## LoadOnDemand: 1
+
+libs\AceGUI-3.0\AceGUI-3.0.xml
+libs\AceConfig-3.0\AceConfig-3.0.xml
+libs\AceGUI-3.0-SharedMediaWidgets\widget.xml
+
+VilinkasInsanityOptions.lua
