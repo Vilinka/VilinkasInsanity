@@ -9,7 +9,6 @@ externals:
         url: https://repos.wowace.com/wow/ace3/trunk/AceDB-3.0
     libs/LibSharedMedia-3.0:
         url: https://repos.wowace.com/wow/libsharedmedia-3-0/trunk/LibSharedMedia-3.0
-	libs/LibArtifactData-1.0: https://github.com/Rainrider/LibArtifactData-1.0.git
     Options/libs/AceGUI-3.0:
         url: https://repos.wowace.com/wow/ace3/trunk/AceGUI-3.0
     Options/libs/AceGUI-3.0-SharedMediaWidgets:
