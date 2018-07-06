@@ -1,11 +1,9 @@
 if select(2, UnitClass("player")) ~= "PRIEST" then return end
---if tonumber(select(4, GetBuildInfo())) < 80000 then return end
 
 local name, addon = ...
 _G[name] = addon
 local VilinkasInsanity = addon
 
-local LAD = LibStub("LibArtifactData-1.0")
 local LSM = LibStub("LibSharedMedia-3.0")
 local pairs, ipairs, select = pairs, ipairs, select
 local format, sqrt = format, sqrt
@@ -40,7 +38,6 @@ local spells = {
 	vtouch={id=34914, igain=6}, 
 	mflay={id=15407, igain=3},
 	msear={id=48045, igain=3},
-	cttvflay={id=193473, igain=3},
 }
 setmetatable(spells, {
 	__call=function(self, id)
@@ -58,29 +55,22 @@ local auras = {
 	stmdebuff={id=263406, active=false, expirationTime=0, duration=0},
 	linsanity={id=197937, active=false, stacks=0, display=false},
 	pinfusion={id=10060, active=false, imul=1.25},
-	emind={id=247226, stacks=0},
 	mbender={id=200174, active=false, display=false, igain=8, lastAttackTime=0,
 		baseAttackSpeed=1.5, startTime=0, duration=0, GUID=nil},
 }
 -- Voidform
 local voidform = {
-	id=194249, baseThreshold=100--[[90 (bfa)]], currentStackTime=0, stacks=0, 
+	id=194249, baseThreshold=90, currentStackTime=0, stacks=0, 
 	drainStacks=0, threshold=0, drainMod=1
 }
--- Talents / Artefact traits / Azerite armor traits
+-- Talents / Azerite armor traits
 local talents = {
 	lotvoid={active=false, threshold=0, tier=7, column=1},
-	aspirits={active=false, targets={}, spawnId=147193, despawnId=148859, igain=3, tier=5, column=2}, -- tier=5, column=1 -- Bfa
-	fotmind={active=false, imul=1.2, tier=1, column=2}, -- tier=1, column=1 -- Bfa
-	cttvoid={active=false, spawns={}, id=193470, artifactId=128827, traitId=1575},
+	aspirits={active=false, targets={}, spawnId=147193, despawnId=148859, igain=3, tier=5, column=1},
+	fotmind={active=false, imul=1.2, tier=1, column=1},
 }
 -- Text colors
 local hexColors = { insnaity=nil, cast=nil, passive=nil }
--- T20 set bonuses
-local setBonuses = {
-	t20={itemIds={ 147163, 147164, 147165, 147166, 147167, 147168 },
-	is2setActive=false, is4setActive=false, drainMod=0.90, stmDrainMod=0.95}
-}
 -- VF reports
 local reports = { current={}, display, save, maxSaved, encounterName }
 -- GCD
@@ -277,8 +267,7 @@ local function UpdateBarValues(cast, as)
 end
 
 local function GetInsanityDrain(stack)
-	--return 6 + ((stack - 1) * (0.8) * voidform.drainMod) -- Bfa
-	return 6 + ((stack - 1) * (2/3) * voidform.drainMod)
+	return 6 + ((stack - 1) * (0.8) * voidform.drainMod)
 end
 
 local function GetVoidformTime()
@@ -291,11 +280,9 @@ local function GetVoidformTime()
 			return vfCurrStackTimeLeft
 		else
 			local ins = player.insanity - (vfCurrStackDrain * vfCurrStackTimeLeft)
-			-- Sum d+(x-1)*f*dm, Sum x=m to n => (-1/2)*(m-n-1)*(2*d+f*dm*(m+n-2))=ins => Solve for n, d=6, f=(2/3)
-			-- Sum d+(x-1)*f*dm, Sum x=m to n => (-1/2)*(m-n-1)*(2*d+f*dm*(m+n-2))=ins => Solve for n, d=6, f=(0.8) -- Bfa
+			-- Sum d+(x-1)*f*dm, Sum x=m to n => (-1/2)*(m-n-1)*(2*d+f*dm*(m+n-2))=ins => Solve for n, d=6, f=(0.8)
 			local dm, m = voidform.drainMod, voidform.drainStacks + 1 -- We already drained current stack
-			-- local vfRemStacks = (sqrt(dm*dm*(2*m-3)*(2*m-3)+dm*10*(ins+6*m-9)+225)+dm-15) / (2*dm) -- Bfa
-			local vfRemStacks = (sqrt(dm*dm*(9-12*m+4*m*m)+dm*(72*m-108+12*ins)+324)+dm-18) / (2*dm)
+			local vfRemStacks = (sqrt(dm*dm*(2*m-3)*(2*m-3)+dm*10*(ins+6*m-9)+225)+dm-15) / (2*dm)
 			return vfCurrStackTimeLeft + (vfRemStacks - voidform.drainStacks)
 		end
 	else
@@ -339,36 +326,11 @@ end
 local function GetSpellInsanityGain(castId)
 	local gain = spells(castId)
 	if not (gain > 0) then return 0 end
-	if (castId == spells.mblast.id or castId == spells.mflay.id) then
-		if castId == spells.mblast.id and setBonuses.t20.is2setActive then -- Legion
-			gain = gain + auras.emind.stacks
-		end
-		if talents.fotmind.active then
-			gain = gain * talents.fotmind.imul
-		end
+	if (castId == spells.mblast.id or castId == spells.mflay.id) and talents.fotmind.active then
+		gain = gain * talents.fotmind.imul
 	end
 
     return gain
-end
-
-local function GetCttvInsanityGain(currTime) -- Legion
-	if not talents.cttvoid.active then return 0 end
-	local gain = 0
-	local spawns = talents.cttvoid.spawns
-	for guid in pairs(spawns) do
-		if spawns[guid] ~= nil then
-			if (currTime - spawns[guid].spawnTime) > 10 then
-				spawns[guid] = nil
-			else
-				if spawns[guid].isCasting then
-					gain = gain + spells.cttvflay.igain
-				end
-			end
-		end
-	end
-	if talents.fotmind.active then gain = gain * talents.fotmind.imul end
-
-	return gain
 end
 
 local function UpdateMindbender(currTime)
@@ -456,7 +418,7 @@ local function OnUpdate(self)
 		local castGain, asGain = 0, 0, 0
 		mindbenderGain = UpdateMindbender(currTime)
 		if not auras.stmdebuff.active then
-			castGain = player.castInsnaity + GetCttvInsanityGain(currTime)
+			castGain = player.castInsnaity
 			asGain = GetAsInsanityGain(currTime) + mindbenderGain
 			if auras.stmbuff.active then
 				castGain = castGain * auras.stmbuff.imul
@@ -469,16 +431,6 @@ local function OnUpdate(self)
 		
 		else
 			UpdateStm(currTime)
-		end
-
-		if setBonuses.t20.is4setActive then -- Legion
-			if auras.stmbuff.active then
-				voidform.drainMod = setBonuses.t20.stmDrainMod
-			else
-				voidform.drainMod = setBonuses.t20.drainMod
-			end
-		else
-			voidform.drainMod = 1
 		end
 
 		UpdateBarText(castGain, asGain)
@@ -631,7 +583,7 @@ function VilinkasInsanity:ACTIVE_TALENT_GROUP_CHANGED()
 		self:RegisterUnitEvent("UNIT_MAXPOWER", "player")
 		self:RegisterUnitEvent("UNIT_SPELL_HASTE", "player")
 		self:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
-		self:RegisterUnitEvent("UNIT_INVENTORY_CHANGED", "player")
+		--self:RegisterUnitEvent("UNIT_INVENTORY_CHANGED", "player")
 		
 		self:SetScript("OnUpdate", OnUpdate)
 		
@@ -659,7 +611,7 @@ function VilinkasInsanity:ACTIVE_TALENT_GROUP_CHANGED()
 		self:UnregisterEvent("UNIT_MAXPOWER")
 		self:UnregisterEvent("UNIT_SPELL_HASTE")
 		self:UnregisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
-		self:UnregisterEvent("UNIT_INVENTORY_CHANGED")
+		--self:UnregisterEvent("UNIT_INVENTORY_CHANGED")
 
 		self:SetScript("OnUpdate", nil)
 		
@@ -691,24 +643,7 @@ function VilinkasInsanity:PLAYER_TALENT_UPDATE()
 	end]]--
 end
 
-local function IsSetBonusActive(setItemIds)
-	local setItems = 0
-	for i = 1, #setItemIds do
-		if IsEquippedItem(setItemIds[i]) then
-			setItems = setItems + 1
-		end
-	end
-	if setItems >= 4 then
-		return true, true
-	elseif setItems >= 2 then
-		return true, false
-	else
-		return false, false
-	end
-end
-
 function VilinkasInsanity:UNIT_INVENTORY_CHANGED()
-	setBonuses.t20.is2setActive, setBonuses.t20.is4setActive = IsSetBonusActive(setBonuses.t20.itemIds) -- Legion
 end
 
 function VilinkasInsanity:PLAYER_ENTERING_WORLD()
@@ -792,22 +727,19 @@ local function StartGcd(spellId)
 	end
 end
 
-function VilinkasInsanity:UNIT_SPELLCAST_START(_, _, spellId, _, legionSpellId)
-	--player.castInsnaity = GetSpellInsanityGain(spellId) -- Bfa
-	player.castInsnaity = GetSpellInsanityGain(legionSpellId)
+function VilinkasInsanity:UNIT_SPELLCAST_START(_, _, spellId)
+	player.castInsnaity = GetSpellInsanityGain(spellId)
 	
 	if not player.inCombat and player.castInsnaity > 0 then
 		animations.fade:Stop()
 		frames.main:SetAlpha(1)
 	end
 	
-	StartGcd(legionSpellId)
-	--StartGcd(spellId) -- Bfa
+	StartGcd(spellId)
 end
 
-function VilinkasInsanity:UNIT_SPELLCAST_SUCCEEDED(_, _, spellId, _, legionSpellId)
-	StartGcd(legionSpellId)
-	--StartGcd(spellId) -- Bfa
+function VilinkasInsanity:UNIT_SPELLCAST_SUCCEEDED(_, _, spellId)
+	StartGcd(spellId)
 end
 
 function VilinkasInsanity:UNIT_SPELLCAST_STOP()
@@ -817,9 +749,8 @@ function VilinkasInsanity:UNIT_SPELLCAST_STOP()
     player.castInsnaity = 0
 end
 
-function VilinkasInsanity:UNIT_SPELLCAST_CHANNEL_START(_, _, spellId, _, legionSpellId)
-	--player.castInsnaity = GetSpellInsanityGain(spellId) -- Bfa
-	player.castInsnaity = GetSpellInsanityGain(legionSpellId)
+function VilinkasInsanity:UNIT_SPELLCAST_CHANNEL_START(_, _, spellId)
+	player.castInsnaity = GetSpellInsanityGain(spellId) -- Bfa
 end
 
 function VilinkasInsanity:UNIT_SPELLCAST_CHANNEL_STOP()
@@ -991,33 +922,12 @@ function VilinkasInsanity:COMBAT_LOG_EVENT_UNFILTERED(...)
 				auras.mbender.active = true
 				frames.mindbenderBar:Show()
 			end
-		-- Call to the Void --
-		elseif spellId == talents.cttvoid.id then
-			if event == "SPELL_SUMMON" then
-				CombatLogEventCttvSpawn(destGUID)
-			end
-		-- Empty Mind --
-		elseif spellId == auras.emind.id then
-			if event == "SPELL_AURA_APPLIED" then
-				auras.emind.stacks = GetPlayerBuffCount(emAuraId)
-			elseif event == "SPELL_AURA_APPLIED_DOSE" then
-				auras.emind.stacks = auras.emind.stacks + 1
-			elseif event == "SPELL_AURA_REMOVED" then
-				auras.emind.stacks = 0
-			end
-		end
 	elseif sourceGUID == auras.mbender.GUID and event == "SWING_DAMAGE" then
 		auras.mbender.lastAttackTime = GetTime()
 	-- Mindbender Power Leech spell (200010)
 	elseif destGUID == UnitGUID("player") and spellId == 200010 and event == "SPELL_ENERGIZE" then
 		auras.mbender.lastAttackTime = GetTime()
 		auras.mbender.GUID = sourceGUID
-	-- Void Tentacle spawned by Call to the Void --
-	elseif talents.cttvoid.spawns[sourceGUID] then
-		-- Void Tentacle's Mind Flay --
-		if spellId == spells.cttvflay.id then
-			CombatLogEventCttvCast(sourceGUID, event)
-		end
 	end
 	if event == "UNIT_DIED" then
 		if destGUID == UnitGUID("player") then
@@ -1030,31 +940,6 @@ function VilinkasInsanity:COMBAT_LOG_EVENT_UNFILTERED(...)
 		end
 	end
 end
-
-function VilinkasInsanity:ARTIFACT_EQUIPPED_CHANGED(message, newArtifactID, oldArtifactID)
-	talents.cttvoid.active = false
-	if newArtifactID == talents.cttvoid.artifactId then
-		local id, data = LAD:GetArtifactTraits(newArtifactID)
-		for _,v in pairs(data) do
-			if v.traitID == talents.cttvoid.traitId then
-				talents.cttvoid.active = true
-			end
-		end
-	end
-end
-LAD.RegisterCallback(VilinkasInsanity, "ARTIFACT_EQUIPPED_CHANGED")
-
-function VilinkasInsanity:ARTIFACT_TRAITS_CHANGED(message, artifactID, traitsData)
-	talents.cttvoid.active = false
-	if artifactID == talents.cttvoid.artifactId then
-		for _,v in pairs(traitsData) do
-			if v.traitID == talents.cttvoid.traitId then
-				talents.cttvoid.active = true
-			end
-		end
-	end
-end
-LAD.RegisterCallback(VilinkasInsanity, "ARTIFACT_TRAITS_CHANGED")
 
 -- Conversion function from RGBA to HEX, Credit: https://gist.github.com/marceloCodget/3862929
 local function RGBAToHex(rgba)
