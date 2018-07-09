@@ -1,8 +1,8 @@
 if select(2, UnitClass("player")) ~= "PRIEST" then return end
 
-local name, addon = ...
-_G[name] = addon
-local VilinkasInsanity = addon
+local name = ...
+_G[name] = CreateFrame("Frame", name .. "Frame", UIParent)
+local VilIns = _G[name]
 
 local LSM = LibStub("LibSharedMedia-3.0")
 local pairs, ipairs, select = pairs, ipairs, select
@@ -11,64 +11,71 @@ local GetTime, GetNetStats, GetSpellCooldown = GetTime, GetNetStats, GetSpellCoo
 local UnitAura, UnitPower, UnitAffectingCombat = UnitAura, UnitPower, UnitAffectingCombat
 
 local title = "|cFF9370DB" .. select(2, GetAddOnInfo(name)) .. "|r"
-addon.title = title
+VilIns.title = title
 
 -- Setup event frame
-addon.eventFrame = CreateFrame("Frame", name .. "EventFrame", UIParent)
+--[[addon.eventFrame = CreateFrame("Frame", name .. "EventFrame", UIParent)
 function addon:RegisterEvent(event) addon.eventFrame:RegisterEvent(event) end
 function addon:RegisterUnitEvent(event, unit) addon.eventFrame:RegisterUnitEvent(event, unit) end
 function addon:UnregisterEvent(event) addon.eventFrame:UnregisterEvent(event) end
 function addon:SetScript(frameScriptTypeName, scriptFunction) 
 	addon.eventFrame:SetScript(frameScriptTypeName, scriptFunction) 
 end
-addon.eventFrame:SetScript("OnEvent", function(self, event, ...) addon[event](addon, ...) end)
+addon.eventFrame:SetScript("OnEvent", function(self, event, ...) addon[event](addon, ...) end)]]--
 
-local onUpdateRate = 0.05
+
 -- Shadow priest
 local player = {
-	class="PRIEST", shadowSpec=SPEC_PRIEST_SHADOW, 
-	insanityPowerType=Enum.PowerType.Insanity, insanity=0, maxInsnaity=0, 
+	class="PRIEST", shadowSpec=SPEC_PRIEST_SHADOW, GUID=nil,
+	insanityPowerType=Enum.PowerType.Insanity, insanity=0, maxInsnaity=100, 
 	manaPowerType=Enum.PowerType.Mana, mana=0, maxMana=0, 
 	haste=0, inCombat=false, isCasting=false, castInsnaity=0,
 }
--- Spells
-local spells = {
-	mblast={id=8092, igain=15}, 
-	swvoid={id=205351, igain=25},
-	vtouch={id=34914, igain=6}, 
-	mflay={id=15407, igain=3},
-	msear={id=48045, igain=3},
-}
-setmetatable(spells, {
-	__call=function(self, id)
-		for _,v in pairs(self) do
-			if v.id == id then
-				return v.igain
-			end
-		end
-		return 0
-	end})
 -- Auras
 local auras = {
-	voitorrent={id=205065, active=false},
-	stmbuff={id=193223, active=false, imul=2},
-	stmdebuff={id=263406, active=false, expirationTime=0, duration=0},
+	vtorrent={id=263165, active=false},
+	stmbuff={id=193223, active=false, stacks=0, imul=2},
+	stmdebuff={id=263406, active=false, duration=0, expirationTime=0},
 	linsanity={id=197937, active=false, stacks=0, display=false},
 	pinfusion={id=10060, active=false, imul=1.25},
-	mbender={id=200174, active=false, display=false, igain=8, lastAttackTime=0,
-		baseAttackSpeed=1.5, startTime=0, duration=0, GUID=nil},
+	mbender={id=200174, active=false, duration=0, expirationTime=0, display=false, 
+		igain=8, lastAttackTime=0, baseAttackSpeed=1.5, GUID=nil},
 }
+
 -- Voidform
 local voidform = {
 	id=194249, baseThreshold=90, currentStackTime=0, stacks=0, 
 	drainStacks=0, threshold=0, drainMod=1
 }
--- Talents / Azerite armor traits
+-- Talents 
 local talents = {
-	lotvoid={active=false, threshold=0, tier=7, column=1},
-	aspirits={active=false, targets={}, spawnId=147193, despawnId=148859, igain=3, tier=5, column=1},
-	fotmind={active=false, imul=1.2, tier=1, column=1},
+	lotvoid={active=false, tier=7, column=1},
+	aspirits={active=false, tier=5, column=1},
+	fotmind={active=false, tier=1, column=1},
 }
+-- Azerite armor traits
+local traits = {}
+-- Spell insnaity
+local spellInsanityGain = {
+	-- Mind blast
+	[8092] = function() return 15 end,
+	-- Shadow Word: Void
+	[205351] = function() return 25 end,
+	-- Vampiric Touch
+	[34914] = function() return 6 end,
+	-- Mind flay
+	[15407] = function() return 3 end,
+	-- Mind sear
+	[48045] = function() return 3 end,
+	-- Mindbender
+	["MB"] = function() return 8 end,
+	-- Auspisious spirits
+	["AS"] = function() return 2 end,
+}
+setmetatable(spellInsanityGain, {
+	__index = function()
+		return 0
+	end})
 -- Text colors
 local hexColors = { insnaity=nil, cast=nil, passive=nil }
 -- VF reports
@@ -475,6 +482,16 @@ local function GetPlayerAuraTime(spellId, filter)
 	return nil
 end
 
+local function GetPlayerAuraInfo(auraId, filter)
+	for i = 1, 40 do
+		local _, _, count, _, duration, expirationTime, _, _, _, id = UnitAura("player", i, filter)
+		if id == auraId then
+			return true, count, duration, expirationTime
+		end
+	end
+	return false
+end
+
 local function PrintVfRep(report, fromArchive)
 	if (reports.display == 1 and report.stmduration ~= nil) or reports.display == 2 or fromArchive == true then
 		print(format(title .. " VF report: %s", date("%X %x", report.time)))
@@ -551,7 +568,110 @@ function VilinkasInsanity:ClearSavedVfReps()
 	print("Saved reports cleared!")
 end
 
-VilinkasInsanity:RegisterEvent("ADDON_LOADED")
+local updateASRate, lastUpdateASTime = 1, 0
+local function UpdateAS(currentTime)
+	local dt = currentTime - lastUpdateASTime
+	if dt > updateASRate then
+
+	end
+end
+
+local function UpdateMB(currentTime)
+	
+end
+
+local updateRate, lastUpdateTime = 0.05, 0
+function VilIns:OnUpdate()
+	local currentTime = GetTime()
+	local dt = currentTime - lastUpdateTime
+
+	if dt > updateRate then
+		UpdateAS(currentTime)
+		UpdateMB(currentTime)
+
+
+	end
+
+	lastUpdateTime = currentTime
+end
+
+function VilIns:Setup()
+	local spec = GetSpecialization()
+	local show = false
+	if spec == player.shadowSpec then
+		if not VilIns.frames then
+			-- TODO: Create frames
+		end
+		show = true
+		self:RegisterEvent("PLAYER_ENTERING_WORLD")
+		self:RegisterEvent("PLAYER_TALENT_UPDATE")
+		self:RegisterEvent("PLAYER_REGEN_ENABLED")
+		self:RegisterEvent("PLAYER_REGEN_DISABLED")
+		self:RegisterEvent("ENCOUNTER_START")
+		self:RegisterEvent("ENCOUNTER_END")
+		self:RegisterUnitEvent("UNIT_SPELLCAST_START", "player")
+		self:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
+		self:RegisterUnitEvent("UNIT_SPELLCAST_STOP", "player")
+		self:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_START", "player")
+		self:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_STOP", "player")
+		self:RegisterUnitEvent("UNIT_POWER_FREQUENT", "player")
+		self:RegisterUnitEvent("UNIT_MAXPOWER", "player")
+		self:RegisterUnitEvent("UNIT_SPELL_HASTE", "player")
+		--self:RegisterUnitEvent("UNIT_INVENTORY_CHANGED", "player")
+		self:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+	else
+		self:UnregisterEvent("PLAYER_TALENT_UPDATE")
+		self:UnregisterEvent("PLAYER_ENTERING_WORLD")
+		self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+		self:UnregisterEvent("PLAYER_REGEN_DISABLED")
+		self:UnregisterEvent("ENCOUNTER_START")
+		self:UnregisterEvent("ENCOUNTER_END")
+		self:UnregisterEvent("UNIT_SPELLCAST_START")
+		self:UnregisterEvent("UNIT_SPELLCAST_SUCCEEDED")
+		self:UnregisterEvent("UNIT_SPELLCAST_STOP")
+		self:UnregisterEvent("UNIT_SPELLCAST_CHANNEL_START")
+		self:UnregisterEvent("UNIT_SPELLCAST_CHANNEL_STOP")
+		self:UnregisterEvent("UNIT_POWER_FREQUENT")
+		self:UnregisterEvent("UNIT_MAXPOWER")
+		self:UnregisterEvent("UNIT_SPELL_HASTE")
+		--self:UnregisterEvent("UNIT_INVENTORY_CHANGED")
+		self:UnregisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+	end
+
+	self:SetScript("OnUpdate", self.OnUpdate)
+	self:SetShown(show)
+	self:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED")
+end
+
+VilIns:RegisterEvent("ADDON_LOADED")
+VilIns:SetScript("OnEvent", function(self, event, ...)
+	if event == "ADDON_LOADED" then
+		if name == ... then
+			self:Setup()
+		end
+	elseif event == "PLAYER_ENTERING_WORLD" then
+		--print("PLAYER_ENTERING_WORLD")
+		player.GUID = UnitGUID("player")
+	elseif event == "ACTIVE_TALENT_GROUP_CHANGED" then
+		--print("ACTIVE_TALENT_GROUP_CHANGED")
+		self:Setup()
+	elseif event == "PLAYER_TALENT_UPDATE" then
+		--print("PLAYER_TALENT_UPDATE")
+	elseif event == "UNIT_POWER_FREQUENT" then
+		--print("UNIT_POWER_FREQUENT")
+	elseif event == "UNIT_MAXPOWER" then
+		--print("UNIT_MAXPOWER")
+	elseif event == "UNIT_SPELL_HASTE" then
+		--print("UNIT_SPELL_HASTE")
+	elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
+		local _, logEvent, _, sourceGUID, _, _, _, destGUID, _, _, _, spellId, spellName = CombatLogGetCurrentEventInfo()
+		if sourceGUID == player.GUID then
+
+		end
+	end
+end)
+
+--VilinkasInsanity:RegisterEvent("ADDON_LOADED")
 function VilinkasInsanity:ADDON_LOADED(...)
 	if name == ...	then
 		self:ACTIVE_TALENT_GROUP_CHANGED()
@@ -657,7 +777,6 @@ function VilinkasInsanity:PLAYER_ENTERING_WORLD()
 	auras.stmbuff.active = HasPlayerAura(auras.stmbuff.id, "HELPFUL")
 	auras.stmdebuff.active = HasPlayerAura(auras.stmdebuff.id, "HARMFUL")
 	auras.pinfusion.active = HasPlayerAura(auras.pinfusion.id, "HELPFUL")
-	auras.emind.stacks = GetPlayerBuffCount(auras.emind.id)
 	local haveTotem, _, startTime, duration = GetTotemInfo(1)
 	if haveTotem then
 		auras.mbender.duration = duration
@@ -849,7 +968,7 @@ local function CombatLogEventPlayerDied()
 end
 
 function VilinkasInsanity:COMBAT_LOG_EVENT_UNFILTERED(...)
-	local _, event, _, sourceGUID, _, _, _, destGUID, _, _, _, spellId, spellName = ... -- = CombatLogGetCurrentEventInfo() -- Bfa
+	local _, event, _, sourceGUID, _, _, _, destGUID, _, _, _, spellId, spellName = CombatLogGetCurrentEventInfo()
 	--print(format("Name: %s id: %s source: %s dest: %s event: %s", spellName, spellId, sourceGUID, destGUID, event))
 	if sourceGUID == UnitGUID("player") then
 		--print(format("Name: %s id: %s source: %s dest: %s event: %s", spellName, spellId, sourceGUID, destGUID, event))
@@ -922,6 +1041,7 @@ function VilinkasInsanity:COMBAT_LOG_EVENT_UNFILTERED(...)
 				auras.mbender.active = true
 				frames.mindbenderBar:Show()
 			end
+		end
 	elseif sourceGUID == auras.mbender.GUID and event == "SWING_DAMAGE" then
 		auras.mbender.lastAttackTime = GetTime()
 	-- Mindbender Power Leech spell (200010)
