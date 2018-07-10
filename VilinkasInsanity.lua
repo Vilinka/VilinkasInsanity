@@ -13,58 +13,55 @@ local UnitAura, UnitPower, UnitAffectingCombat = UnitAura, UnitPower, UnitAffect
 local title = "|cFF9370DB" .. select(2, GetAddOnInfo(name)) .. "|r"
 VilIns.title = title
 
--- Setup event frame
---[[addon.eventFrame = CreateFrame("Frame", name .. "EventFrame", UIParent)
-function addon:RegisterEvent(event) addon.eventFrame:RegisterEvent(event) end
-function addon:RegisterUnitEvent(event, unit) addon.eventFrame:RegisterUnitEvent(event, unit) end
-function addon:UnregisterEvent(event) addon.eventFrame:UnregisterEvent(event) end
-function addon:SetScript(frameScriptTypeName, scriptFunction) 
-	addon.eventFrame:SetScript(frameScriptTypeName, scriptFunction) 
-end
-addon.eventFrame:SetScript("OnEvent", function(self, event, ...) addon[event](addon, ...) end)]]--
-
-
 -- Shadow priest
 local player = {
-	class="PRIEST", shadowSpec=SPEC_PRIEST_SHADOW, GUID=nil,
+	shadowSpec=SPEC_PRIEST_SHADOW, guid=nil,
 	insanityPowerType=Enum.PowerType.Insanity, insanity=0, maxInsnaity=100, 
 	manaPowerType=Enum.PowerType.Mana, mana=0, maxMana=0, 
-	haste=0, inCombat=false, isCasting=false, castInsnaity=0,
+	haste=0, inCombat=false, castInsnaity=0, passiveInsnaity=0
 }
 -- Auras
 local auras = {
+	vform = {id=194249, active=false, duration=0, expirationTime=0, 
+		stacks=0, currentStackTime=0, drainStacks=0, drainMod=1,
+		baseThreshold=90, threshold=0},
 	vtorrent={id=263165, active=false},
 	stmbuff={id=193223, active=false, stacks=0, imul=2},
 	stmdebuff={id=263406, active=false, duration=0, expirationTime=0},
 	linsanity={id=197937, active=false, stacks=0, display=false},
-	pinfusion={id=10060, active=false, imul=1.25},
-	mbender={id=200174, active=false, duration=0, expirationTime=0, display=false, 
-		igain=8, lastAttackTime=0, baseAttackSpeed=1.5, GUID=nil},
-}
-
--- Voidform
-local voidform = {
-	id=194249, baseThreshold=90, currentStackTime=0, stacks=0, 
-	drainStacks=0, threshold=0, drainMod=1
+	mbender={id=200174, active=false, duration=0, expirationTime=0,
+		lastAttackTime=0, baseAttackSpeed=1.5, guid=nil},
 }
 -- Talents 
 local talents = {
-	lotvoid={active=false, tier=7, column=1},
-	aspirits={active=false, tier=5, column=1},
-	fotmind={active=false, tier=1, column=1},
+	lotvoid={active=false, tier=7, column=1, threshold=60},
+	aspirits={active=false, tier=5, column=1, count=0, targets={}, idSpawn, idDespawn},
+	fotmind={active=false, tier=1, column=1, imul=1.2},
 }
 -- Azerite armor traits
 local traits = {}
 -- Spell insnaity
 local spellInsanityGain = {
 	-- Mind blast
-	[8092] = function() return 15 end,
+	[8092] = function() 
+		local imul = 1
+		if talents.fotmind.active then
+			imul = talents.fotmind.imul
+		end
+		return 15 * imul
+	end,
 	-- Shadow Word: Void
 	[205351] = function() return 25 end,
 	-- Vampiric Touch
 	[34914] = function() return 6 end,
 	-- Mind flay
-	[15407] = function() return 3 end,
+	[15407] = function()
+		local imul = 1
+		if talents.fotmind.active then
+			imul = talents.fotmind.imul
+		end
+		return 3 * imul
+	end,
 	-- Mind sear
 	[48045] = function() return 3 end,
 	-- Mindbender
@@ -197,6 +194,40 @@ local function CreateFrames()
     animations.vfEnd.alpha:SetFromAlpha(1.0)
     animations.vfEnd.alpha:SetToAlpha(0.0)
 	animations.vfEnd.alpha:SetDuration(0.1)
+
+	local function SetValue(self, value)
+		local parent = self:GetParent()
+		local baseVale = parent:GetValue()
+		local maxValue = baseValue + value
+		if maxValue > player.maxInsnaity then
+			value = player.maxInsnaity - baseValue
+		end
+		
+		local parentWidth = parent:GetWidth()
+		local left = baseValue / player.maxInsnaity
+		local right = (baseValue + value) / player.maxInsnaity
+		local left_position = (baseValue / player.maxInsnaity) * parentWidth
+		local width = (value / player.maxInsnaity) * parentWidth
+		if width < 0.5 then
+			bar:Hide()
+		else
+			bar:ClearAllPoints()
+			bar:SetTexCoord(left, right, 0, 1)
+			bar:SetWidth(width)
+			bar:SetPoint("TOPLEFT", left_position, 0)
+			bar:SetPoint("BOTTOMLEFT", left_position, 0)
+			bar:Show()
+		end
+	end
+
+	local function SetOffset(self, offset)
+		local parent = self:GetParent()
+		local parentWidth = parent:GetWidth()
+		local markHalfWidth = self:GetWidth() / 2
+		self:ClearAllPoints()
+		self:SetPoint("TOPLEFT", parent, "TOPLEFT", parent_width * offset - markHalfWidth, 0)
+		self:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -parent_width * (1 - offset) + markHalfWidth, 0)
+	end
 	
 	VilinkasInsanity.frames = frames
 end
@@ -219,15 +250,6 @@ local function UpdateBorderSize(border, size)
 	border.texs[4]:SetSize(0, size)
 end
 
-local function UpdateMark(mark, offsetX)
-	local parent = mark:GetParent()
-	local parent_width = parent:GetWidth()
-	local mark_half_width = mark:GetWidth() / 2
-	mark:ClearAllPoints()
-	mark:SetPoint("TOPLEFT", parent, "TOPLEFT", parent_width * offsetX - mark_half_width, 0)
-	mark:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -parent_width * (1 - offsetX) + mark_half_width, 0)
-end
-
 local function UpdateVoidformTresholdMark()
 	if select(4, GetTalentInfo(talents.lotvoid.tier, talents.lotvoid.column, 1)) then
 		voidform.threshold = talents.lotvoid.threshold
@@ -241,28 +263,6 @@ local function UpdateVoidformTresholdMark()
 		frames.insanityBar.vfMark:Show()
 	else
 		frames.insanityBar.vfMark:Hide()
-	end
-end
-
-local function UpdateBarValueHelper(bar, base_value, value, parent_width)
-	local max_value = base_value + value
-	if max_value > player.maxInsnaity then
-		value = player.maxInsnaity - base_value
-	end
-	local width = parent_width
-	local left = base_value / player.maxInsnaity
-	local right = (base_value + value) / player.maxInsnaity
-	local left_position = (base_value / player.maxInsnaity) * width
-	local bar_width = (value / player.maxInsnaity) * width
-	if bar_width < 0.5 then
-		bar:Hide()
-	else
-		bar:ClearAllPoints()
-		bar:SetTexCoord(left, right, 0, 1)
-		bar:SetWidth(bar_width)
-		bar:SetPoint("TOPLEFT", left_position, 0)
-		bar:SetPoint("BOTTOMLEFT", left_position, 0)
-		bar:Show()
 	end
 end
 
@@ -448,40 +448,6 @@ local function OnUpdate(self)
 	timeSinceLastOnUpdate = currTime
 end
 
-local function GetPlayerBuffCount(spellId)
-	for i = 1, 40 do
-		local _, _, _, count, _, _, _, _, _, _, auraId = UnitAura("player", i, "HELPFUL")
-		--local _, _, count, _, _, _, _, _, _, auraId = UnitAura("player", i, "HELPFUL") -- Bfa
-		if spellId == auraId then
-			return count
-		end
-	end
-	return 0
-end
-
-local function HasPlayerAura(spellId, filter)
-	for i = 1, 40 do
-		local auraId = select(11, UnitAura("player", i, filter))
-		--local auraId = select(10, UnitAura("player", i, filter)) -- Bfa
-		if spellId == auraId then
-			return true
-		end
-	end
-	return false
-end
-
-local function GetPlayerAuraTime(spellId, filter)
-	for i = 1, 40 do
-		auraId = select(11, UnitAura("player", i, filter))
-		local duration, expirationTime, _, _, _, spellId = select(5, UnitAura("player", i, filter))
-		--local _, _, _, _, _, _, _, _, _, auraId = UnitAura("player", i, filter) -- Bfa
-		if spellId == auraId then
-			return duration, expirationTime
-		end
-	end
-	return nil
-end
-
 local function GetPlayerAuraInfo(auraId, filter)
 	for i = 1, 40 do
 		local _, _, count, _, duration, expirationTime, _, _, _, id = UnitAura("player", i, filter)
@@ -568,6 +534,14 @@ function VilinkasInsanity:ClearSavedVfReps()
 	print("Saved reports cleared!")
 end
 
+local function UpdateMaxPower()
+
+end
+
+local function UpdateTalents()
+
+end
+
 local updateASRate, lastUpdateASTime = 1, 0
 local function UpdateAS(currentTime)
 	local dt = currentTime - lastUpdateASTime
@@ -580,6 +554,26 @@ local function UpdateMB(currentTime)
 	
 end
 
+local function UpdateGCD(currentTime)
+
+end
+
+local function UpdateSTM(currentTime)
+
+end
+
+local function UpdateManaBar()
+
+end
+
+local function UpdateText(currentTime)
+
+end
+
+local function UpdateInsanityBar()
+
+end
+
 local updateRate, lastUpdateTime = 0.05, 0
 function VilIns:OnUpdate()
 	local currentTime = GetTime()
@@ -589,7 +583,11 @@ function VilIns:OnUpdate()
 		UpdateAS(currentTime)
 		UpdateMB(currentTime)
 
+		UpdateGCD(currentTime)
 
+		UpdateText(currentTime)
+
+		UpdateMainBar()
 	end
 
 	lastUpdateTime = currentTime
@@ -651,7 +649,7 @@ VilIns:SetScript("OnEvent", function(self, event, ...)
 		end
 	elseif event == "PLAYER_ENTERING_WORLD" then
 		--print("PLAYER_ENTERING_WORLD")
-		player.GUID = UnitGUID("player")
+		player.guid = UnitGUID("player")
 	elseif event == "ACTIVE_TALENT_GROUP_CHANGED" then
 		--print("ACTIVE_TALENT_GROUP_CHANGED")
 		self:Setup()
@@ -665,7 +663,7 @@ VilIns:SetScript("OnEvent", function(self, event, ...)
 		--print("UNIT_SPELL_HASTE")
 	elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
 		local _, logEvent, _, sourceGUID, _, _, _, destGUID, _, _, _, spellId, spellName = CombatLogGetCurrentEventInfo()
-		if sourceGUID == player.GUID then
+		if sourceGUID == player.guid then
 
 		end
 	end
@@ -1042,12 +1040,12 @@ function VilinkasInsanity:COMBAT_LOG_EVENT_UNFILTERED(...)
 				frames.mindbenderBar:Show()
 			end
 		end
-	elseif sourceGUID == auras.mbender.GUID and event == "SWING_DAMAGE" then
+	elseif sourceGUID == auras.mbender.guid and event == "SWING_DAMAGE" then
 		auras.mbender.lastAttackTime = GetTime()
 	-- Mindbender Power Leech spell (200010)
 	elseif destGUID == UnitGUID("player") and spellId == 200010 and event == "SPELL_ENERGIZE" then
 		auras.mbender.lastAttackTime = GetTime()
-		auras.mbender.GUID = sourceGUID
+		auras.mbender.guid = sourceGUID
 	end
 	if event == "UNIT_DIED" then
 		if destGUID == UnitGUID("player") then
