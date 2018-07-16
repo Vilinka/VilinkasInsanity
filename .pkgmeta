@@ -18,5 +18,8 @@ externals:
 
 enable-nolib-creation: no
 
+ignore:
+    - README.md
+
 move-folders:
     VilinkasInsanity/Options/: VilinkasInsanityOptions
