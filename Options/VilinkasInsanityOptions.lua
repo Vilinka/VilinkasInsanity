@@ -11,7 +11,7 @@ local LSM = LibStub("LibSharedMedia-3.0")
 
 local VilinkasInsanity = _G["VilinkasInsanity"]
 local VilinkasInsanityVer = GetAddOnMetadata("VilinkasInsanity", "Version")
-local vilinsFrame, oocFadeAnim = VilinkasInsanity.frames.main, VilinkasInsanity.oocFadeAnim
+local vilinsFrame, oocFadeAnim = VilinkasInsanity, VilinkasInsanity.animations.fade
 
 local title = VilinkasInsanity.title
 
@@ -492,41 +492,46 @@ local function CreateOptions()
 					},
 				},
 			},
-			mindbender = {
+			sfiend = {
 				type = "group",
-				name = "Mindbender",
+				name = "Shadowfiend",
 				order = 6,
 				args = {
+					description = {
+						type = "description",
+						name = "Shadowfiend and Mindbender options.",
+						order = 1
+					},
 					toggle = {
 						type = 'toggle',
 						name = "Enable",
-						order = 1,
-						arg = "mindbender.enable"
+						order = 2,
+						arg = "sfiend.enable"
 					},
 					anchorheader = {
 						type = "header",
 						name = "Anchor point",
-						order = 2
+						order = 3
 					},
 					anchordescription = {
 						type = "description",
 						name = "Anchor point relative to the bar.",
-						order = 3
+						order = 4
 					},
 					anchorselect = {
 						type = 'select',
 						name = "Anchor point",
-						order = 4,
+						order = 5,
 						values = {
 							["TOP"] = "Top",
 							["BOTTOM"] = "Bottom",
 						},
-						arg = "mindbender.pos"
+						arg = "sfiend.pos"
 					},
 					barheader = {
 						type = "header",
-						name = "Mindbender bar",
-						order = 5
+						name = "Shadowfiend bar",
+						order = 6,
 					},
 					heightrange = {
 						type = "range",
@@ -535,42 +540,42 @@ local function CreateOptions()
 						softMin = 1,
 						softMax = 25,
 						step = 1,
-						order = 6,
-						arg = "mindbender.height"
+						order = 7,
+						arg = "sfiend.height"
 					},
 					color = {
 						type = "color",
 						name = "Color",
-						order = 7,
+						order = 8,
 						hasAlpha = false,
-						arg = "mindbender.barcolor"
+						arg = "sfiend.barcolor"
 					},
 					depletetoggle = {
 						type = 'toggle',
 						name = "Deplete",
-						order = 8,
-						arg = "mindbender.deplete"
+						order = 9,
+						arg = "sfiend.deplete"
 					},
 					markheader = {
 						type = "header",
-						name = "Mindbender next attack mark",
-						order = 9
+						name = "Shadowfiend next attack mark",
+						order = 10,
 					},
 					markcolor = {
 						type = "color",
 						name = "Color",
-						order = 10,
+						order = 11,
 						hasAlpha = true,
-						arg = "mindbender.markcolor"
+						arg = "sfiend.markcolor"
 					},
 					markthickness = {
 						type = "range",
 						name = "Thickness",
-						order = 11,
+						order = 12,
 						min = 1,
 						softMax = 5,
 						step = 1,
-						arg = "mindbender.markthickness"
+						arg = "sfiend.markthickness"
 					},
 				},
 			},
@@ -608,7 +613,7 @@ local function CreateOptions()
 					lotvrange = {
 						type = "range",
 						name = "Insanity",
-						min = 65,
+						min = 60,
 						max = 100,
 						step = 1,
 						order = 6,
@@ -728,7 +733,8 @@ end
 
 local function LockFrame()
 	vilinsFrame:SetMovable(false)
-	VilinkasInsanity:ACTIVE_TALENT_GROUP_CHANGED()
+	--VilinkasInsanity:Setup()
+	VilinkasInsanity:SetupPlayerState()
 end
 
 local function OnMouseDown()

@@ -9,36 +9,40 @@ local pairs, ipairs, select = pairs, ipairs, select
 local format, sqrt = format, sqrt
 local GetTime, GetNetStats, GetSpellCooldown = GetTime, GetNetStats, GetSpellCooldown
 local UnitAura, UnitPower, UnitAffectingCombat = UnitAura, UnitPower, UnitAffectingCombat
+local GetSpellPowerCost = GetSpellPowerCost
 
 local title = "|cFF9370DB" .. select(2, GetAddOnInfo(name)) .. "|r"
 VilIns.title = title
 
 -- Shadow priest
 local player = {
-	shadowSpec=SPEC_PRIEST_SHADOW, guid=nil,
-	insanityPowerType=Enum.PowerType.Insanity, insanity=0, maxInsnaity=100, 
-	manaPowerType=Enum.PowerType.Mana, mana=0, maxMana=0, 
-	haste=0, inCombat=false, castInsnaity=0, passiveInsnaity=0
+	class = "PRIEST",
+	shadowSpec=SPEC_PRIEST_SHADOW,
+	insanityPowerType=Enum.PowerType.Insanity,
+	manaPowerType=Enum.PowerType.Mana,
+	guid=nil, inCombat=false,
+	insanity=0, maxInsnaity=100, currentCastInsanityGain=0, passiveInsanityGain=0,
+	mana=0, maxMana=0, currentCastManaCost=0,
+	haste=0,
 }
--- Auras
 local auras = {
 	vform = {id=194249, active=false, duration=0, expirationTime=0, 
 		stacks=0, currentStackTime=0, drainStacks=0, drainMod=1,
 		baseThreshold=90, threshold=0},
-	vtorrent={id=263165, active=false},
-	stmbuff={id=193223, active=false, stacks=0, imul=2},
-	stmdebuff={id=263406, active=false, duration=0, expirationTime=0},
-	linsanity={id=197937, active=false, stacks=0, display=false},
-	mbender={id=200174, active=false, duration=0, expirationTime=0,
-		lastAttackTime=0, baseAttackSpeed=1.5, guid=nil},
+	vtorrent = {id=263165, active=false},
+	stmbuff = {id=193223, active=false, imul=2},
+	stmdebuff = {id=263406, active=false, duration=0, expirationTime=0, display=false},
+	linsanity = {id=197937, active=false, stacks=0, display=false},
 }
--- Talents 
+local sfiend = {id=254232, active=false, display=false, duration=0, expirationTime=0,
+	lastAttackTime=0, baseAttackSpeed=1.5, guid=nil, igain=2, idLeech=262485}
 local talents = {
 	lotvoid={active=false, tier=7, column=1, threshold=60},
-	aspirits={active=false, tier=5, column=1, count=0, targets={}, idSpawn, idDespawn},
+	aspirits={active=false, tier=5, column=1, count=0, targets={}, idSpawn=147193, idDespawn=148859, igain=2},
 	fotmind={active=false, tier=1, column=1, imul=1.2},
+	mbender={active=false, tier=1, column=1, id=200174, igain=6, idLeech=200010}
 }
--- Azerite armor traits
+-- Traits
 local traits = {}
 -- Spell insnaity
 local spellInsanityGain = {
@@ -46,41 +50,81 @@ local spellInsanityGain = {
 	[8092] = function() 
 		local imul = 1
 		if talents.fotmind.active then
-			imul = talents.fotmind.imul
+			imul = imul * talents.fotmind.imul
+		end
+		if auras.stmbuff.active then
+			imul = imul * auras.stmbuff.imul
+		end
+		return 14 * imul
+	end,
+	-- Shadow Word: Void
+	[205351] = function()
+		local imul = 1
+		if auras.stmbuff.active then
+			imul = imul * auras.stmbuff.imul
 		end
 		return 15 * imul
 	end,
-	-- Shadow Word: Void
-	[205351] = function() return 25 end,
 	-- Vampiric Touch
-	[34914] = function() return 6 end,
+	[34914] = function()
+		local imul = 1
+		if auras.stmbuff.active then
+			imul = imul * auras.stmbuff.imul
+		end
+		return 6 * imul
+	end,
 	-- Mind flay
 	[15407] = function()
 		local imul = 1
 		if talents.fotmind.active then
 			imul = talents.fotmind.imul
 		end
+		if auras.stmbuff.active then
+			imul = imul * auras.stmbuff.imul
+		end
 		return 3 * imul
 	end,
 	-- Mind sear
-	[48045] = function() return 3 end,
-	-- Mindbender
-	["MB"] = function() return 8 end,
-	-- Auspisious spirits
-	["AS"] = function() return 2 end,
+	[48045] = function()
+		local imul = 1
+		if auras.stmbuff.active then
+			imul = imul * auras.stmbuff.imul
+		end
+		return 3 * imul 
+	end,
+	-- Dark void
+	[263346] = function()
+		local imul = 1
+		if auras.stmbuff.active then
+			imul = imul * auras.stmbuff.imul
+		end
+		return 30 * imul
+	end,
 }
+-- Spell mana cost
+local spellManaCost = {
+	-- Dispersion
+	[32375] = function() return select(4, GetSpellPowerCost(32375)) end
+}
+local function returnZero()
+	return 0
+end
 setmetatable(spellInsanityGain, {
 	__index = function()
-		return 0
+		return returnZero
+	end})
+setmetatable(spellManaCost, {
+	__index = function()
+		return returnZero
 	end})
 -- Text colors
-local hexColors = { insnaity=nil, cast=nil, passive=nil }
+local hexColors = { insnaity, cast, passive }
 -- VF reports
-local reports = { current={}, display, save, maxSaved, encounterName }
+local reports = { current={}, encounterName }
 -- GCD
-local gcd = { start=0, duration=0, eanble=false }
+local gcd = { start=0, duration=0, enable=false }
 -- Frames
-local frames = { main, bg, border, borderVf, borderStm, insanityBar, gcdBar, mindbenderBar, stmBar, manaBar }
+local frames = { bg, border, borderVf, borderStm, insanityBar, gcdBar, sfiendBar, stmBar, manaBar }
 local fontStrings = { insnanity, vfStacks, vfTime }
 local animations = { fade, vfReady, vfEnd }
 -- DB
@@ -88,17 +132,16 @@ local db, defaults
 
 local function CreateFrames()
     -- Create frames
-    frames.main = CreateFrame("Frame", name .. "MainFrame", UIParent)
-    frames.bg = CreateFrame("Frame", name .. "Background", frames.main)
+    frames.bg = CreateFrame("Frame", name .. "Background", VilIns)
 	frames.border = CreateFrame("Frame", name .. "Border", frames.bg)
 	frames.vfBorder = CreateFrame("Frame", name .. "VoidformBorder", frames.border)
 	frames.stmBorder = CreateFrame("Frame", name .. "StmBorder", frames.border)
 	frames.insanityBar = CreateFrame("StatusBar", name .. "InsanityBar", frames.bg)
-	frames.insanityBar.vfMark = CreateFrame("Frame", name .. "VoidformMark", frames.insanityBar)
+	frames.insanityBar.vfMark = CreateFrame("StatusBar", name .. "VoidformMark", frames.insanityBar)
 	frames.gcdBar = CreateFrame("StatusBar", name .. "GcdBar", frames.bg)
-	frames.mindbenderBar = CreateFrame("StatusBar", name .. "MindbenderBar", frames.bg)
-	frames.mindbenderBar.attackMark = CreateFrame("Frame", name .. "MindbenderAttackMark",
-		frames.mindbenderBar)
+	frames.sfiendBar = CreateFrame("StatusBar", name .. "ShadowfiendBar", frames.bg)
+	frames.sfiendBar.attackMark = CreateFrame("Frame", name .. "MindbenderAttackMark",
+		frames.sfiendBar)
 	frames.stmBar = CreateFrame("StatusBar", name .. "StmDebuffBar", frames.insanityBar)
 	frames.manaBar = CreateFrame("StatusBar", name .. "ManaBar", frames.bg)
 	frames.manaBar.dispMark = CreateFrame("Frame", name .. "ManaDispMark", frames.manaBar)
@@ -107,7 +150,7 @@ local function CreateFrames()
 	fontStrings.vfStacks = frames.insanityBar:CreateFontString(nil, "OVERLAY")
 	fontStrings.vfTime = frames.insanityBar:CreateFontString(nil, "OVERLAY")
 	-- Create animations
-	animations.fade = frames.main:CreateAnimationGroup()
+	animations.fade = VilIns:CreateAnimationGroup()
 	animations.vfReady = frames.vfBorder:CreateAnimationGroup()
 	animations.vfEnd = frames.vfBorder:CreateAnimationGroup()
 
@@ -141,10 +184,10 @@ local function CreateFrames()
 	frames.gcdBar.tex:SetColorTexture(1, 1, 1, 1)
 	frames.gcdBar:SetMinMaxValues(0, 1)
 	
-	frames.mindbenderBar.tex = frames.mindbenderBar:CreateTexture(nil, "BACKGROUND")
-    frames.mindbenderBar.tex:SetAllPoints()
-	frames.mindbenderBar.tex:SetColorTexture(1, 1, 1, 1)
-	frames.mindbenderBar:SetMinMaxValues(0, 1)
+	frames.sfiendBar.tex = frames.sfiendBar:CreateTexture(nil, "BACKGROUND")
+    frames.sfiendBar.tex:SetAllPoints()
+	frames.sfiendBar.tex:SetColorTexture(1, 1, 1, 1)
+	frames.sfiendBar:SetMinMaxValues(0, 1)
 
 	frames.stmBar:SetAllPoints()
 	frames.stmBar:SetMinMaxValues(0, 1)
@@ -157,9 +200,9 @@ local function CreateFrames()
     frames.insanityBar.vfMark.tex:SetAllPoints()
 	frames.insanityBar.vfMark.tex:SetColorTexture(1, 1, 1, 1)
 	
-	frames.mindbenderBar.attackMark.tex = frames.mindbenderBar.attackMark:CreateTexture(nil, "ARTWORK")
-	frames.mindbenderBar.attackMark.tex:SetAllPoints()
-	frames.mindbenderBar.attackMark.tex:SetColorTexture(1, 1, 1, 1)
+	frames.sfiendBar.attackMark.tex = frames.sfiendBar.attackMark:CreateTexture(nil, "ARTWORK")
+	frames.sfiendBar.attackMark.tex:SetAllPoints()
+	frames.sfiendBar.attackMark.tex:SetColorTexture(1, 1, 1, 1)
 
 	frames.manaBar.dispMark.tex = frames.manaBar.dispMark:CreateTexture(nil, "ARTWORK")
 	frames.manaBar.dispMark.tex:SetAllPoints()
@@ -197,7 +240,7 @@ local function CreateFrames()
 
 	local function SetValue(self, value)
 		local parent = self:GetParent()
-		local baseVale = parent:GetValue()
+		local baseValue = player.insanity
 		local maxValue = baseValue + value
 		if maxValue > player.maxInsnaity then
 			value = player.maxInsnaity - baseValue
@@ -209,243 +252,104 @@ local function CreateFrames()
 		local left_position = (baseValue / player.maxInsnaity) * parentWidth
 		local width = (value / player.maxInsnaity) * parentWidth
 		if width < 0.5 then
-			bar:Hide()
+			self:Hide()
 		else
-			bar:ClearAllPoints()
-			bar:SetTexCoord(left, right, 0, 1)
-			bar:SetWidth(width)
-			bar:SetPoint("TOPLEFT", left_position, 0)
-			bar:SetPoint("BOTTOMLEFT", left_position, 0)
-			bar:Show()
+			self:ClearAllPoints()
+			self:SetTexCoord(left, right, 0, 1)
+			self:SetWidth(width)
+			self:SetPoint("TOPLEFT", left_position, 0)
+			self:SetPoint("BOTTOMLEFT", left_position, 0)
+			self:Show()
 		end
 	end
 
+	frames.insanityBar.cast.SetValue = SetValue
+	frames.insanityBar.passive.SetValue = SetValue
+
 	local function SetOffset(self, offset)
+		if offset > 1 then
+			offset = 1
+		elseif offset < 0 then
+			offset = 0
+		end
 		local parent = self:GetParent()
 		local parentWidth = parent:GetWidth()
 		local markHalfWidth = self:GetWidth() / 2
 		self:ClearAllPoints()
-		self:SetPoint("TOPLEFT", parent, "TOPLEFT", parent_width * offset - markHalfWidth, 0)
-		self:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -parent_width * (1 - offset) + markHalfWidth, 0)
+		self:SetPoint("TOPLEFT", parent, "TOPLEFT", parentWidth * offset - markHalfWidth, 0)
+		self:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -parentWidth * (1 - offset) + markHalfWidth, 0)
 	end
-	
-	VilinkasInsanity.frames = frames
-end
 
-local function UpdateBorderSize(border, size)
-	for i=1,4,1 do
-		border.texs[i]:ClearAllPoints()
+	frames.insanityBar.vfMark.SetOffset = SetOffset
+	frames.sfiendBar.attackMark.SetOffset = SetOffset
+
+	local function SetBorderSize(self, size)
+		for i=1,4,1 do
+			self.texs[i]:ClearAllPoints()
+		end
+		self.texs[1]:SetPoint("TOPRIGHT", self, "TOPLEFT", 0, size)
+		self.texs[1]:SetPoint("BOTTOMRIGHT", self, "BOTTOMLEFT", 0, -size)
+		self.texs[1]:SetSize(size, 0)
+		self.texs[2]:SetPoint("TOPLEFT", self, "TOPRIGHT", 0, size)
+		self.texs[2]:SetPoint("BOTTOMLEFT", self, "BOTTOMRIGHT", 0, -size)
+		self.texs[2]:SetSize(size, 0)
+		self.texs[3]:SetPoint("TOPRIGHT", self, "BOTTOMLEFT")
+		self.texs[3]:SetPoint("TOPLEFT", self, "BOTTOMRIGHT")
+		self.texs[3]:SetSize(0, size)
+		self.texs[4]:SetPoint("BOTTOMRIGHT", self, "TOPRIGHT")
+		self.texs[4]:SetPoint("BOTTOMLEFT", self, "TOPLEFT")
+		self.texs[4]:SetSize(0, size)
 	end
-	border.texs[1]:SetPoint("TOPRIGHT", border, "TOPLEFT", 0, size)
-	border.texs[1]:SetPoint("BOTTOMRIGHT", border, "BOTTOMLEFT", 0, -size)
-	border.texs[1]:SetSize(size, 0)
-	border.texs[2]:SetPoint("TOPLEFT", border, "TOPRIGHT", 0, size)
-	border.texs[2]:SetPoint("BOTTOMLEFT", border, "BOTTOMRIGHT", 0, -size)
-	border.texs[2]:SetSize(size, 0)
-	border.texs[3]:SetPoint("TOPRIGHT", border, "BOTTOMLEFT")
-	border.texs[3]:SetPoint("TOPLEFT", border, "BOTTOMRIGHT")
-	border.texs[3]:SetSize(0, size)
-	border.texs[4]:SetPoint("BOTTOMRIGHT", border, "TOPRIGHT")
-	border.texs[4]:SetPoint("BOTTOMLEFT", border, "TOPLEFT")
-	border.texs[4]:SetSize(0, size)
+
+	frames.border.SetBorderSize = SetBorderSize
+	frames.vfBorder.SetBorderSize = SetBorderSize
+	frames.stmBorder.SetBorderSize = SetBorderSize
+	
+	VilIns.frames = frames
+	VilIns.animations = animations
+	VilIns.fontStrings = fontStrings
 end
 
 local function UpdateVoidformTresholdMark()
-	if select(4, GetTalentInfo(talents.lotvoid.tier, talents.lotvoid.column, 1)) then
-		voidform.threshold = talents.lotvoid.threshold
+	local vform = auras.vform
+	if talents.lotvoid.active then
+		vform.threshold = talents.lotvoid.threshold
 	else
-		voidform.threshold = voidform.baseThreshold
+		vform.threshold = auras.vform.baseThreshold
 	end
 
-	if voidform.threshold <= 99 then
-		local offsetX = voidform.threshold / player.maxInsnaity
-		UpdateMark(frames.insanityBar.vfMark, offsetX)
+	if vform.threshold <= 99 then
+		local offsetX = vform.threshold / player.maxInsnaity
+		frames.insanityBar.vfMark:SetOffset(offsetX)
 		frames.insanityBar.vfMark:Show()
 	else
 		frames.insanityBar.vfMark:Hide()
 	end
 end
 
-local function UpdateBarValues(cast, as)
-    frames.insanityBar:SetValue(player.insanity)
-    local insanityBarWidth = frames.insanityBar:GetWidth()
-    UpdateBarValueHelper(frames.insanityBar.cast, player.insanity, cast, insanityBarWidth)
-    UpdateBarValueHelper(frames.insanityBar.passive, player.insanity + cast, as, insanityBarWidth)
-end
-
 local function GetInsanityDrain(stack)
-	return 6 + ((stack - 1) * (0.8) * voidform.drainMod)
+	return 6 + ((stack - 1) * (0.8) * auras.vform.drainMod)
 end
 
-local function GetVoidformTime()
-	if player.insanity > 0 and voidform.stacks > 0 then
+local function GetVoidformTime(currentTime)
+	local vform = auras.vform
+	if player.insanity > 0 and vform.stacks > 0 then
 		-- Drain current stack
-		local vfCurrStackTimeLeft = 1.0 - (GetTime() - voidform.currentStackTime)-- + select(4, GetNetStats()) / 1000
-		local vfCurrStackDrain = GetInsanityDrain(voidform.drainStacks)
+		local vfCurrStackTimeLeft = 1.0 - (currentTime - vform.currentStackTime)-- + select(4, GetNetStats()) / 1000
+		local vfCurrStackDrain = GetInsanityDrain(vform.drainStacks)
 		if ((vfCurrStackDrain * vfCurrStackTimeLeft) > player.insanity) then
 			vfCurrStackTimeLeft = player.insanity / vfCurrStackDrain
 			return vfCurrStackTimeLeft
 		else
 			local ins = player.insanity - (vfCurrStackDrain * vfCurrStackTimeLeft)
 			-- Sum d+(x-1)*f*dm, Sum x=m to n => (-1/2)*(m-n-1)*(2*d+f*dm*(m+n-2))=ins => Solve for n, d=6, f=(0.8)
-			local dm, m = voidform.drainMod, voidform.drainStacks + 1 -- We already drained current stack
+			local dm, m = vform.drainMod, vform.drainStacks + 1 -- We already drained current stack
 			local vfRemStacks = (sqrt(dm*dm*(2*m-3)*(2*m-3)+dm*10*(ins+6*m-9)+225)+dm-15) / (2*dm)
-			return vfCurrStackTimeLeft + (vfRemStacks - voidform.drainStacks)
+			return vfCurrStackTimeLeft + (vfRemStacks - vform.drainStacks)
 		end
 	else
 		return 0
 	end
-end
-
-local function UpdateBarText(castGain, asGain)
-    local castGainText = castGain > 0 and "|c" .. castHexColor .. castGain .. "|r + " or ""
-	local asGainText = asGain > 0 and "|c" .. asHexColor .. asGain .. "|r + " or ""
-	fontStrings.insnaity:SetText(castGainText .. asGainText .. player.insanity)
-	if (voidform.stacks > 0) then
-		fontStrings.vfStacks:SetText(format("%d (%d%%)", voidform.stacks, player.haste))
-		fontStrings.vfTime:SetText(format("%.1f (%d)", GetVoidformTime(), voidform.drainStacks))
-	elseif (auras.linsanity.stacks > 0) and auras.linsanity.display then
-		fontStrings.vfStacks:SetText(format("%d", auras.linsanity.stacks))
-		fontStrings.vfTime:SetText("")
-	else
-		fontStrings.vfStacks:SetText("")
-		fontStrings.vfTime:SetText("")
-	end
-end
-
-local function GetAsInsanityGain(currTime)
-	if not talents.aspirits.active then return 0 end
-	local gain = 0
-	local targets = talents.aspirits.targets
-	for guid in pairs(targets) do
-		if targets[guid] ~= nil then
-			if (currTime - targets[guid].lastUpdateTime) > 10 then
-				targets[guid] = nil
-			else
-				gain = gain + targets[guid].asCount*talents.aspirits.igain
-			end
-		end
-	end
-    
-    return gain
-end
-
-local function GetSpellInsanityGain(castId)
-	local gain = spells(castId)
-	if not (gain > 0) then return 0 end
-	if (castId == spells.mblast.id or castId == spells.mflay.id) and talents.fotmind.active then
-		gain = gain * talents.fotmind.imul
-	end
-
-    return gain
-end
-
-local function UpdateMindbender(currTime)
-	local insanityGain = 0
-	if auras.mbender.active and auras.mbender.enable then
-		local timeLeft = auras.mbender.duration - (currTime - auras.mbender.startTime)
-		local bar = frames.mindbenderBar
-		if not (timeLeft > 0) then
-			auras.mbender.active = false
-			bar:Hide()
-		else
-			local attacksSpeed = auras.mbender.baseAttackSpeed / (1 + (player.haste / 100))
-			local predictedTimeNextAttack = auras.mbender.lastAttackTime + attacksSpeed
-			local pct = (currTime - auras.mbender.startTime) / auras.mbender.duration
-			local deplete = bar.deplete
-			if deplete then
-				bar:SetValue(1 - pct)
-			else
-				bar:SetValue(pct)
-			end
-			if (predictedTimeNextAttack - currTime) < -0.5 then
-				-- Remove attack mark
-				bar.attackMark:Hide()
-			else
-				-- Continue as normal
-				local nextAttackPtc = (predictedTimeNextAttack - auras.mbender.startTime) / auras.mbender.duration
-
-				if deplete then
-					UpdateMark(bar.attackMark, 1 - nextAttackPtc)
-				else
-					UpdateMark(bar.attackMark, nextAttackPtc)
-				end
-
-				frames.mindbenderBar.attackMark:Show()
-
-				insanityGain = auras.mbender.igain
-			end
-		end
-	end
-
-	return insanityGain
-end
-
-local function UpdateGcdBar(currTime)
-	if gcd.start > 0 then
-		local netTime = 0--select(4, GetNetStats()) / 1000)
-		local pct = (currTime - gcd.start - netTime) / gcd.duration
-		local gcdBar = frames.gcdBar
-		if pct > 1 then
-			gcdBar:SetValue(0)
-			gcdBar:Hide()
-			gcd.start = 0
-        else
-			if gcdBar.deplete then
-				gcdBar:SetValue(1-pct)
-			else
-				gcdBar:SetValue(pct)
-			end
-		end
-	end
-end
-
-local function UpdateStm(currTime)
-	local stmDebuffTimeLeft = stmDebuffExpirationTime - currentTime
-	if stmDebuffTimeLeft < 0 then
-		frames.stmBorder:Hide()
-		frames.stmBar:Hide()
-		auras.stmdebuff.active = false
-	else
-		local pct = stmDebuffTimeLeft / stmDebuffDuration
-		local deplete = frames.stmBar.deplete
-		if deplete then
-			frames.stmBar:SetValue(1 - pct)
-		else
-			frames.stmBar:SetValue(pct)
-		end
-	end
-end
-
-local lastOnUpdateTime = 0
-local function OnUpdate(self)
-	local currTime = GetTime()
-	local timeSinceLastOnUpdate = currTime - lastOnUpdateTime
-	if timeSinceLastOnUpdate >= onUpdateRate then
-		local castGain, asGain = 0, 0, 0
-		mindbenderGain = UpdateMindbender(currTime)
-		if not auras.stmdebuff.active then
-			castGain = player.castInsnaity
-			asGain = GetAsInsanityGain(currTime) + mindbenderGain
-			if auras.stmbuff.active then
-				castGain = castGain * auras.stmbuff.imul
-				asGain = asGain * auras.stmbuff.imul
-			end
-			if auras.pinfusion.active then
-				castGain = castGain * auras.pinfusion.imul
-				asGain = asGain * auras.pinfusion.imul 
-			end
-		
-		else
-			UpdateStm(currTime)
-		end
-
-		UpdateBarText(castGain, asGain)
-		UpdateBarValues(castGain, asGain)
-		UpdateGcdBar(currTime)
-	end
-
-	timeSinceLastOnUpdate = currTime
 end
 
 local function GetPlayerAuraInfo(auraId, filter)
@@ -455,7 +359,7 @@ local function GetPlayerAuraInfo(auraId, filter)
 			return true, count, duration, expirationTime
 		end
 	end
-	return false
+	return false, 0, 0, 0
 end
 
 local function PrintVfRep(report, fromArchive)
@@ -535,62 +439,238 @@ function VilinkasInsanity:ClearSavedVfReps()
 end
 
 local function UpdateMaxPower()
-
+	player.maxInsnaity = UnitPowerMax("player", player.insnaityPowerType)
+	player.maxMana = UnitPowerMax("player", player.manaPowerType)
+	frames.insanityBar:SetMinMaxValues(0, player.maxInsnaity)
+	frames.manaBar:SetMinMaxValues(0, player.maxMana)
+	UpdateVoidformTresholdMark()
 end
 
-local function UpdateTalents()
+local canEnterVfPrev = false
+local function UpdatePower()
+	player.insanity = UnitPower("player", player.insnaityPowerType)
+	if not (auras.vform.stacks > 0) then
+		if (player.insanity >= auras.vform.threshold) and not canEnterVfPrev then
+			animations.vfEnd:Stop()
+			animations.vfReady:Play()
+			canEnterVfPrev = true
+		elseif player.insanity < auras.vform.threshold and canEnterVfPrev then
+			animations.vfReady:Finish()
+			canEnterVfPrev = false
+		end
+	end
+	player.mana = UnitPower("player", player.manaPowerType)
+end
 
+local function UpdateInventory()
+end
+
+function VilinkasInsanity:SetupPlayerState()
+	player.guid = UnitGUID("player")
+	player.haste = UnitSpellHaste("player")
+	player.inCombat = UnitAffectingCombat("player")
+	if not player.inCombat then
+		local oocAlpha = animations.fade.alpha:GetToAlpha()
+		self:SetAlpha(oocAlpha)
+	end
+
+	-- Check for shadow fiend
+	local haveTotem, _, startTime, duration = GetTotemInfo(1)
+	if haveTotem then
+		sfiend.duration = duration
+		sfiend.startTime = startTime
+		sfiend.active = true
+		frames.sfiendBar:Show()
+	end
+
+	-- Check for auras
+	auras.vform.active, auras.vform.stacks = GetPlayerAuraInfo(auras.vform.id)
+	auras.linsanity.active, auras.linsanity.stacks = GetPlayerAuraInfo(auras.linsanity.id)
+	auras.vtorrent.active = GetPlayerAuraInfo(auras.vtorrent.id, "HELPFUL")
+	auras.stmbuff.active = GetPlayerAuraInfo(auras.stmbuff.id, "HELPFUL")
+	local stmdebuffActive, _, stmdebuffDuration, stmdebuffExpirationTime = GetPlayerAuraInfo(auras.stmdebuff.id, "HARMFUL")
+	auras.stmdebuff.active = stmdebuffActive
+	auras.stmdebuff.duration = stmdebuffDuration
+	auras.stmdebuff.expirationTime = stmdebuffExpirationTime
+
+	talents.aspirits.targets = {}
+	UpdateMaxPower()
+	UpdatePower()
+	UpdateInventory()
 end
 
 local updateASRate, lastUpdateASTime = 1, 0
 local function UpdateAS(currentTime)
-	local dt = currentTime - lastUpdateASTime
-	if dt > updateASRate then
-
+	local aspirits = talents.aspirits
+	if aspirits.active then
+		local dt = currentTime - lastUpdateASTime
+		if dt > updateASRate and aspirits.active then
+			local targets = aspirits.targets
+			for guid in pairs(targets) do
+				if targets[guid] ~= nil then
+					if (currentTime - targets[guid].lastUpdateTime) > 10 then
+						aspirits.count = aspirits.count - targets[guid].asCount
+						targets[guid] = nil
+					end
+				end
+			end
+			if aspirits.count < 0 then
+				aspirits.count = 0
+			end
+		end
+		local igain = aspirits.count * aspirits.igain
+		player.passiveInsanityGain = player.passiveInsanityGain + igain
 	end
 end
 
-local function UpdateMB(currentTime)
-	
-end
+local function UpdateSF(currentTime)
+	if sfiend.active and sfiend.enable then
+		--local timeLeft = sfiend.duration - (currentTime - sfiend.startTime)
+		local timeLeft = sfiend.expirationTime - currentTime
+		local bar = frames.sfiendBar
+		if not (timeLeft > 0) then
+			sfiend.active = false
+			bar:Hide()
+		else
+			local attacksSpeed = sfiend.baseAttackSpeed / (1 + (player.haste / 100))
+			local predictedTimeNextAttack = sfiend.lastAttackTime + attacksSpeed
+			local pct = (sfiend.expirationTime - currentTime) / sfiend.duration
+			local deplete = bar.deplete
+			if deplete then
+				bar:SetValue(pct)
+			else
+				bar:SetValue(1 - pct)
+			end
+			if (predictedTimeNextAttack - currentTime) < -0.5 then
+				-- Remove attack mark
+				bar.attackMark:Hide()
+			else
+				-- Continue as normal
+				local nextAttackPtc = (sfiend.expirationTime - predictedTimeNextAttack) / sfiend.duration
 
-local function UpdateGCD(currentTime)
+				if deplete then
+					bar.attackMark:SetOffset(nextAttackPtc)
+					--UpdateMark(bar.attackMark, nextAttackPtc)
+				else
+					--UpdateMark(bar.attackMark, 1 - nextAttackPtc)
+					bar.attackMark:SetOffset(1 - nextAttackPtc)
+				end
 
-end
+				frames.sfiendBar.attackMark:Show()
 
-local function UpdateSTM(currentTime)
-
-end
-
-local function UpdateManaBar()
-
+				if talents.mbender.active then
+					player.passiveInsanityGain = player.passiveInsanityGain + talents.mbender.igain
+				else
+					player.passiveInsanityGain = player.passiveInsanityGain +  sfiend.igain
+				end
+			end
+		end
+	end
 end
 
 local function UpdateText(currentTime)
-
+	local castGain = player.currentCastInsanityGain
+	local castGainText = castGain > 0 and "|c" .. castHexColor .. castGain .. "|r + " or ""
+	local passiveGain = player.passiveInsanityGain
+	local passiveGainText = passiveGain > 0 and "|c" .. asHexColor .. passiveGain .. "|r + " or ""
+	fontStrings.insnaity:SetText(castGainText .. passiveGainText .. player.insanity)
+	local vform = auras.vform
+	if (vform.stacks > 0) then
+		fontStrings.vfStacks:SetText(format("%d (%d%%)", vform.stacks, player.haste))
+		fontStrings.vfTime:SetText(format("%.1f (%d)", GetVoidformTime(currentTime), vform.drainStacks))
+	elseif (auras.linsanity.stacks > 0) and auras.linsanity.display then
+		fontStrings.vfStacks:SetText(format("%d", auras.linsanity.stacks))
+		fontStrings.vfTime:SetText("")
+	else
+		fontStrings.vfStacks:SetText("")
+		fontStrings.vfTime:SetText("")
+	end
 end
 
 local function UpdateInsanityBar()
-
+	local insanityBar = frames.insanityBar
+	insanityBar:SetValue(player.insanity)
+	insanityBar.cast:SetValue(player.currentCastInsanityGain)
+	insanityBar.passive:SetValue(player.passiveInsanityGain)
 end
 
-local updateRate, lastUpdateTime = 0.05, 0
-function VilIns:OnUpdate()
+local function UpdateManaBar()
+end
+
+local function StartGcd(spellId)
+	local start, duration = GetSpellCooldown(spellId)
+	if start > 0 and gcd.enable then
+		gcd.start = start
+		gcd.duration = duration
+		frames.gcdBar:Show()
+	end
+end
+
+local function UpdateGCD(currentTime)
+	if gcd.start > 0 then
+		local netTime = 0--select(4, GetNetStats()) / 1000)
+		local pct = (currentTime - gcd.start - netTime) / gcd.duration
+		local gcdBar = frames.gcdBar
+		if pct > 1 then
+			gcdBar:SetValue(0)
+			gcdBar:Hide()
+			gcd.start = 0
+        else
+			if gcdBar.deplete then
+				gcdBar:SetValue(1-pct)
+			else
+				gcdBar:SetValue(pct)
+			end
+		end
+	end
+end
+
+local function UpdateSTM(currentTime)
+	local stmDebuffTimeLeft = stmDebuffExpirationTime - currentTime
+	if stmDebuffTimeLeft < 0 then
+		frames.stmBorder:Hide()
+		frames.stmBar:Hide()
+		auras.stmdebuff.active = false
+	else
+		local pct = stmDebuffTimeLeft / stmDebuffDuration
+		local deplete = frames.stmBar.deplete
+		if deplete then
+			frames.stmBar:SetValue(1 - pct)
+		else
+			frames.stmBar:SetValue(pct)
+		end
+	end
+end
+
+local updateRate, lastUpdateTime = 0.02, 0
+local function OnUpdate()
 	local currentTime = GetTime()
 	local dt = currentTime - lastUpdateTime
 
+	
 	if dt > updateRate then
 		UpdateAS(currentTime)
-		UpdateMB(currentTime)
+		UpdateSF(currentTime)
 
-		UpdateGCD(currentTime)
+		local stmbuff = auras.stmbuff
+		if stmbuff.active then
+			local imul = stmbuff.imul
+			player.passiveInsanityGain = player.passiveInsanityGain * imul
+		elseif auras.stmdebuff.active then
+			player.currentCastInsanityGain = 0
+			player.passiveInsanityGain = 0
+		end
 
 		UpdateText(currentTime)
+		UpdateInsanityBar()
 
-		UpdateMainBar()
+		UpdateManaBar()
+		UpdateGCD(currentTime)
+		--UpdateSTM(currentTime)
+
+		player.passiveInsanityGain = 0
+		lastUpdateTime = currentTime
 	end
-
-	lastUpdateTime = currentTime
 end
 
 function VilIns:Setup()
@@ -598,7 +678,8 @@ function VilIns:Setup()
 	local show = false
 	if spec == player.shadowSpec then
 		if not VilIns.frames then
-			-- TODO: Create frames
+			CreateFrames()
+			self:UpdateSettings()
 		end
 		show = true
 		self:RegisterEvent("PLAYER_ENTERING_WORLD")
@@ -636,7 +717,7 @@ function VilIns:Setup()
 		self:UnregisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 	end
 
-	self:SetScript("OnUpdate", self.OnUpdate)
+	self:SetScript("OnUpdate", OnUpdate)
 	self:SetShown(show)
 	self:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED")
 end
@@ -649,415 +730,210 @@ VilIns:SetScript("OnEvent", function(self, event, ...)
 		end
 	elseif event == "PLAYER_ENTERING_WORLD" then
 		--print("PLAYER_ENTERING_WORLD")
-		player.guid = UnitGUID("player")
+		self:SetupPlayerState()
+	elseif event == "PLAYER_REGEN_ENABLED" or event == "PLAYER_REGEN_DISABLED" then
+		player.inCombat = UnitAffectingCombat("player")
+		if player.inCombat then
+			animations.fade:Stop()
+			self:SetAlpha(1)
+		else
+			animations.fade:Play()
+		end
 	elseif event == "ACTIVE_TALENT_GROUP_CHANGED" then
 		--print("ACTIVE_TALENT_GROUP_CHANGED")
 		self:Setup()
 	elseif event == "PLAYER_TALENT_UPDATE" then
 		--print("PLAYER_TALENT_UPDATE")
+		if GetSpecialization() == player.shadowSpec then
+			talents.lotvoid.active = select(4, GetTalentInfo(talents.lotvoid.tier, talents.lotvoid.column, 1))
+			talents.fotmind.active = select(4, GetTalentInfo(talents.fotmind.tier, talents.fotmind.column, 1))
+			talents.mbender.active = select(4, GetTalentInfo(talents.mbender.tier, talents.mbender.column, 1))
+			talents.aspirits.active = select(4, GetTalentInfo(talents.aspirits.tier, talents.aspirits.column, 1))
+			if not talents.aspirits.active then
+				talents.aspirits.targets = {}
+				talents.aspirits.count = 0
+			end
+			UpdateVoidformTresholdMark()
+		end
 	elseif event == "UNIT_POWER_FREQUENT" then
-		--print("UNIT_POWER_FREQUENT")
+		UpdatePower()
 	elseif event == "UNIT_MAXPOWER" then
 		--print("UNIT_MAXPOWER")
+		UpdateMaxPower()
 	elseif event == "UNIT_SPELL_HASTE" then
 		--print("UNIT_SPELL_HASTE")
+		player.haste = UnitSpellHaste("player")
+	elseif event == "UNIT_SPELLCAST_START" or event == "UNIT_SPELLCAST_CHANNEL_START" then
+		local _, _, spellId = ...
+		player.currentCastInsanityGain = spellInsanityGain[spellId]()
+		if not player.inCombat and player.currentCastInsanityGain > 0 then
+			animations.fade:Stop()
+			self:SetAlpha(1)
+		end
+		StartGcd(spellId)
+	elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
+		local _, _, spellId = ...
+		StartGcd(spellId)
+	elseif event == "UNIT_SPELLCAST_STOP" or event == "UNIT_SPELLCAST_CHANNEL_STOP" then
+		if not player.inCombat and player.currentCastInsanityGain > 0 then
+			animations.fade:Play()
+		end
+		player.currentCastInsanityGain = 0
+	elseif event == "ENCOUNTER_START" then
+			local _, encounterName = ...
+			reports.encounterName = encounterName
+	elseif event == "ENCOUNTER_END" then
+			reports.encounterName = nil
 	elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
 		local _, logEvent, _, sourceGUID, _, _, _, destGUID, _, _, _, spellId, spellName = CombatLogGetCurrentEventInfo()
+		
 		if sourceGUID == player.guid then
-
+			--print(format("Name: %s id: %s source: %s dest: %s event: %s", spellName, spellId, sourceGUID, destGUID, logEvent))
+			-- Voidform --
+			if spellId == auras.vform.id then
+				if logEvent == "SPELL_AURA_APPLIED" then
+					local vform = auras.vform
+					vform.currentStackTime = GetTime()
+					vform.drainStacks = 1
+					vform.active, vform.stacks = GetPlayerAuraInfo(vform.id)
+					animations.vfEnd:Stop()
+					animations.vfReady:Stop()
+					frames.vfBorder:SetAlpha(1.0)
+					CreateVfRep()
+				elseif logEvent == "SPELL_AURA_APPLIED_DOSE" then
+					local vform = auras.vform
+					vform.currentStackTime = GetTime()
+					if not auras.vtorrent.active then
+						vform.drainStacks = vform.drainStacks + 1
+						reports.current.vfdrainstacks = vform.drainStacks
+					end
+					vform.stacks = vform.stacks + 1
+					reports.current.vfstacks = vform.stacks
+				elseif logEvent == "SPELL_AURA_REMOVED" then
+					local vform = auras.vform
+					vform.drainStacks = 0
+					vform.stacks = 0
+					vform.currentStackTime = 0
+					animations.vfEnd:Play()
+					FinaliseVfRep()
+				end
+			-- Lingering Insianity --
+			elseif spellId == auras.linsanity.id then
+				if logEvent == "SPELL_AURA_APPLIED" then
+					auras.linsanity.active, auras.linsanity.stacks = GetPlayerAuraInfo(auras.linsanity.id)
+				elseif logEvent == "SPELL_AURA_REMOVED_DOSE" then
+					auras.linsanity.stacks = auras.linsanity.stacks - 1
+				elseif logEvent == "SPELL_AURA_REMOVED" then
+					auras.linsanity.stacks = 0
+				end
+			-- Surrender to Madness --
+			elseif spellId == auras.stmbuff.id then
+				if logEvent == "SPELL_AURA_APPLIED" then
+					auras.stmbuff.active = true
+					reports.current.stmduration = GetTime()
+				elseif logEvent == "SPELL_AURA_REMOVED" then
+					auras.stmbuff.active = false
+				end
+			elseif spellId == auras.stmdebuff.id then
+				if logEvent == "SPELL_AURA_APPLIED" then
+					auras.stmdebuff.active = true
+					--[[local stmdebuffActive, _, stmdebuffDuration, stmdebuffExpirationTime = GetPlayerAuraInfo(auras.stmdebuff.id, "HARMFUL")
+					auras.stmdebuff.active = stmdebuffActive
+					auras.stmdebuff.duration = stmdebuffDuration
+					auras.stmdebuff.expirationTime = stmdebuffExpirationTime
+					frames.stmBorder:Show()
+					frames.stmBar:Show()]]--
+				elseif logEvent == "SPELL_AURA_REMOVED" then
+					auras.stmdebuff.active = false
+					--[[frames.stmBorder:Hide()
+					frames.stmBar:Hide()]]--
+				end
+			-- Auspicious Spirits Spawn --
+			elseif spellId == talents.aspirits.idSpawn then
+				if logEvent == "SPELL_CAST_SUCCESS" then
+					local aspirits = talents.aspirits
+					if aspirits.active then
+						targets = aspirits.targets
+						if not targets[destGUID] then
+							targets[destGUID] = {}
+							targets[destGUID].asCount = 0
+							targets[destGUID].asSpawnTime = {}
+						end
+						targets[destGUID].asCount = targets[destGUID].asCount + 1
+						targets[destGUID].lastUpdateTime = GetTime()
+						aspirits.count = aspirits.count + 1
+					end
+				end
+			-- Auspicious Spirits Despawn --
+			elseif spellId == talents.aspirits.idDespawn then
+				if logEvent == "SPELL_DAMAGE" or event == "SPELL_MISSED" then
+					local aspirits = talents.aspirits
+					if talents.aspirits.active then
+						targets = aspirits.targets
+						if targets[destGUID] then
+							targets[destGUID].asCount = targets[destGUID].asCount - 1
+							targets[destGUID].lastUpdateTime = GetTime()
+							aspirits.count = aspirits.count - 1
+							if targets[destGUID].asCount <= 0 then
+								targets[destGUID] = nil
+							end
+							if aspirits.count < 0 then
+								aspirits.count = 0
+							end
+						end
+					end
+				end
+			-- Void Torrent --
+			elseif spellId == auras.vtorrent.id then
+				if logEvent == "SPELL_AURA_APPLIED" then
+					auras.vtorrent.active = true
+				elseif logEvent == "SPELL_AURA_REMOVED" then
+					auras.vtorrent.active = false
+				end
+			-- Shadow fiend / Mindbender --
+			elseif spellId == sfiend.id or spellId == talents.mbender.id then
+				if logEvent == "SPELL_SUMMON" then
+					sfiend.guid = destGUID
+					local _, _, startTime, duration = GetTotemInfo(1)
+					sfiend.duration = duration
+					sfiend.expirationTime = startTime + duration
+					sfiend.active = true
+					frames.sfiendBar:Show()
+				end
+			end
+		elseif sourceGUID == sfiend.guid and logEvent == "SWING_DAMAGE" then
+			sfiend.lastAttackTime = GetTime()
+		-- Power Leech (Mindbender Power Leech spell (200010))
+		elseif destGUID == UnitGUID("player") and 
+			spellId == sfiend.idLeech or spellId == talents.mbender.idLeech and
+			logEvent == "SPELL_ENERGIZE" then
+			sfiend.lastAttackTime = GetTime()
+			sfiend.guid = sourceGUID
+		end
+		if logEvent == "UNIT_DIED" then
+			if destGUID == UnitGUID("player") then
+				if vform.stacks > 0 then
+					FinaliseVfRep()
+				end
+				talents.aspirits.targets = {}
+				vform.currentStackTime = 0
+				vform.drainStacks = 0
+				vform.stacks = 0
+				auras.linsanity.stacks = 0
+				auras.stmbuff.active = false
+				auras.stmdebuff.active = false
+				auras.voitorrent.active = false
+				animations.vfReady:Stop()
+				animations.vfEnd:Play()
+			elseif destGUID == sfiend.guid then
+				sfiend.active = false
+				frames.sfiendBar:Hide()
+			elseif talents.aspirits.targets[destGUID] then
+				talents.aspirits.targets[destGUID] = nil
+			end
 		end
 	end
 end)
-
---VilinkasInsanity:RegisterEvent("ADDON_LOADED")
-function VilinkasInsanity:ADDON_LOADED(...)
-	if name == ...	then
-		self:ACTIVE_TALENT_GROUP_CHANGED()
-		--self:UNIT_MAXPOWER()
-		--self:PLAYER_TALENT_UPDATE()
-		--self:UNIT_INVENTORY_CHANGED()
-		self:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED")
-	end
-end
-
-function VilinkasInsanity:ACTIVE_TALENT_GROUP_CHANGED()
-	if GetSpecialization() == player.shadowSpec then
-        if not frames.main then
-            CreateFrames()
-            self:UpdateSettings()
-        end
-		self:RegisterEvent("PLAYER_TALENT_UPDATE")
-		self:RegisterEvent("PLAYER_ENTERING_WORLD")
-		self:RegisterEvent("PLAYER_REGEN_ENABLED")
-		self:RegisterEvent("PLAYER_REGEN_DISABLED")
-		self:RegisterEvent("ENCOUNTER_START")
-		self:RegisterEvent("ENCOUNTER_END")
-		self:RegisterUnitEvent("UNIT_SPELLCAST_START", "player")
-		self:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
-		self:RegisterUnitEvent("UNIT_SPELLCAST_STOP", "player")
-		self:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_START", "player")
-		self:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_STOP", "player")
-		self:RegisterUnitEvent("UNIT_POWER_FREQUENT", "player")
-		self:RegisterUnitEvent("UNIT_MAXPOWER", "player")
-		self:RegisterUnitEvent("UNIT_SPELL_HASTE", "player")
-		self:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
-		--self:RegisterUnitEvent("UNIT_INVENTORY_CHANGED", "player")
-		
-		self:SetScript("OnUpdate", OnUpdate)
-		
-		if not UnitAffectingCombat("player") then
-			local oocAlpha = animations.fade.alpha:GetToAlpha()
-			frames.main:SetAlpha(oocAlpha)
-		end
-		
-		--self:PLAYER_TALENT_UPDATE()
-		--self:UNIT_INVENTORY_CHANGED()
-		frames.main:Show()
-	else
-		self:UnregisterEvent("PLAYER_TALENT_UPDATE")
-		self:UnregisterEvent("PLAYER_ENTERING_WORLD")
-		self:UnregisterEvent("PLAYER_REGEN_ENABLED")
-		self:UnregisterEvent("PLAYER_REGEN_DISABLED")
-		self:UnregisterEvent("ENCOUNTER_START")
-		self:UnregisterEvent("ENCOUNTER_END")
-		self:UnregisterEvent("UNIT_SPELLCAST_START")
-		self:UnregisterEvent("UNIT_SPELLCAST_SUCCEEDED")
-		self:UnregisterEvent("UNIT_SPELLCAST_STOP")
-		self:UnregisterEvent("UNIT_SPELLCAST_CHANNEL_START")
-		self:UnregisterEvent("UNIT_SPELLCAST_CHANNEL_STOP")
-		self:UnregisterEvent("UNIT_POWER_FREQUENT")
-		self:UnregisterEvent("UNIT_MAXPOWER")
-		self:UnregisterEvent("UNIT_SPELL_HASTE")
-		self:UnregisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
-		--self:UnregisterEvent("UNIT_INVENTORY_CHANGED")
-
-		self:SetScript("OnUpdate", nil)
-		
-		if frames.main then frames.main:Hide() end
-	end
-end
-
-function VilinkasInsanity:PLAYER_TALENT_UPDATE()
-	if GetSpecialization() ~= player.shadowSpec then return end
-	--self:UNIT_MAXPOWER()
-	talents.fotmind.active = select(4, GetTalentInfo(talents.fotmind.tier, talents.fotmind.column, 1))
-	talents.aspirits.active = select(4, GetTalentInfo(talents.aspirits.tier, talents.aspirits.column, 1))
-	if not talents.aspirits.active then
-		talents.aspirits.targets = {}
-	end
-	UpdateVoidformTresholdMark()
-	--[[if select(4, GetTalentInfo(talents.lotvoid.tier, talents.lotvoid.column, 1)) then
-		voidform.threshold = talents.lotvoid.threshold
-	else
-		voidform.threshold = voidform.baseThreshold
-	end
-
-    if voidform.threshold < 99 then
-		local offsetX = voidform.threshold / player.maxInsnaity
-		UpdateMark(frames.insanityBar.vfMark, offsetX)
-		frames.insanityBar.vfMark:Show()
-	else
-		frames.insanityBar.vfMark:Hide()
-	end]]--
-end
-
-function VilinkasInsanity:UNIT_INVENTORY_CHANGED()
-end
-
-function VilinkasInsanity:PLAYER_ENTERING_WORLD()
-	if not UnitAffectingCombat("player") then
-		local oocAlpha = animations.fade.alpha:GetToAlpha()
-		frames.main:SetAlpha(oocAlpha)
-	end
-	voidform.stacks = GetPlayerBuffCount(voidform.id)
-	auras.linsanity.stacks = GetPlayerBuffCount(auras.linsanity.id)
-	auras.voitorrent.active = HasPlayerAura(auras.voitorrent.id, "HELPFUL")
-	auras.stmbuff.active = HasPlayerAura(auras.stmbuff.id, "HELPFUL")
-	auras.stmdebuff.active = HasPlayerAura(auras.stmdebuff.id, "HARMFUL")
-	auras.pinfusion.active = HasPlayerAura(auras.pinfusion.id, "HELPFUL")
-	local haveTotem, _, startTime, duration = GetTotemInfo(1)
-	if haveTotem then
-		auras.mbender.duration = duration
-		auras.mbender.startTime = startTime
-		auras.mbender.active = true
-		frames.mindbenderBar:Show()
-	end
-	if auras.stmdebuff.active then
-		local duration, expirationTime = GetPlayerAuraTime(auras.stmdebuff.id, "HARMFUL")
-		stmDebuffDuration = duration
-		stmDebuffExpirationTime = expirationTime
-		frames.stmBorder:Show()
-	end
-	talents.aspirits.targets = {}
-	self:UNIT_POWER_FREQUENT()
-	self:UNIT_SPELL_HASTE()
-	self:UNIT_MAXPOWER()
-	self:UNIT_INVENTORY_CHANGED()
-end
-
-function VilinkasInsanity:PLAYER_REGEN_ENABLED()
-    player.inCombat = false
-	animations.fade:Play()
-end
-
-function VilinkasInsanity:PLAYER_REGEN_DISABLED()
-    player.inCombat = true
-	animations.fade:Stop()
-	frames.main:SetAlpha(1)
-end
-
-local canEnterVfPrev = false
-function VilinkasInsanity:UNIT_POWER_FREQUENT()
-	player.insanity = UnitPower("player", player.insnaityPowerType)
-	if not (voidform.stacks > 0) then
-		if (player.insanity >= voidform.threshold) and not canEnterVfPrev then
-			animations.vfEnd:Stop()
-			animations.vfReady:Play()
-			canEnterVfPrev = true
-		elseif player.insanity < voidform.threshold and canEnterVfPrev then
-			animations.vfReady:Finish()
-			canEnterVfPrev = false
-		end
-	end
-	player.mana = UnitPower("player", player.manaPowerType)
-end
-
-function VilinkasInsanity:UNIT_MAXPOWER()
-	if GetSpecialization() ~= player.shadowSpec then return end
-	player.maxInsnaity = UnitPowerMax("player", player.insnaityPowerType)
-	player.maxMana = UnitPowerMax("player", player.manaPowerType)
-	frames.insanityBar:SetMinMaxValues(0, player.maxInsnaity)
-	frames.manaBar:SetMinMaxValues(0, player.maxMana)
-	UpdateVoidformTresholdMark()
-end
-
-function VilinkasInsanity:UNIT_SPELL_HASTE()
-	player.haste = UnitSpellHaste("player")
-end
-
-local function StartGcd(spellId)
-	local start, duration = GetSpellCooldown(spellId)
-	if start > 0 and gcd.enable then
-		gcd.start = start
-		gcd.duration = duration
-		frames.gcdBar:Show()
-	end
-end
-
-function VilinkasInsanity:UNIT_SPELLCAST_START(_, _, spellId)
-	player.castInsnaity = GetSpellInsanityGain(spellId)
-	
-	if not player.inCombat and player.castInsnaity > 0 then
-		animations.fade:Stop()
-		frames.main:SetAlpha(1)
-	end
-	
-	StartGcd(spellId)
-end
-
-function VilinkasInsanity:UNIT_SPELLCAST_SUCCEEDED(_, _, spellId)
-	StartGcd(spellId)
-end
-
-function VilinkasInsanity:UNIT_SPELLCAST_STOP()
-	if not player.inCombat and player.castInsnaity > 0 then
-		animations.fade:Play()
-    end
-    player.castInsnaity = 0
-end
-
-function VilinkasInsanity:UNIT_SPELLCAST_CHANNEL_START(_, _, spellId)
-	player.castInsnaity = GetSpellInsanityGain(spellId) -- Bfa
-end
-
-function VilinkasInsanity:UNIT_SPELLCAST_CHANNEL_STOP()
-    player.castInsnaity = 0
-end
-
-function VilinkasInsanity:ENCOUNTER_START(encounterID, encounterName)
-	reports.encounterName = encounterName
-end
-
-function VilinkasInsanity:ENCOUNTER_END(encounterID, encounterName)
-	reports.encounterName = nil
-end
-
-local function CombatLogEventVoidform(event)
-    if event == "SPELL_AURA_APPLIED" then
-        voidform.currentStackTime = GetTime()
-		voidform.drainStacks = 1
-		voidform.stacks = GetPlayerBuffCount(voidform.id)
-        animations.vfEnd:Stop()
-        animations.vfReady:Stop()
-        frames.vfBorder:SetAlpha(1.0)
-        CreateVfRep()
-    elseif event == "SPELL_AURA_APPLIED_DOSE" then
-        voidform.currentStackTime = GetTime()
-        if not auras.voitorrent.active then
-            voidform.drainStacks = voidform.drainStacks + 1
-            reports.current.vfdrainstacks = voidform.drainStacks
-        end
-        voidform.stacks = voidform.stacks + 1
-        reports.current.vfstacks = voidform.stacks
-    elseif event == "SPELL_AURA_REMOVED" then
-        voidform.drainStacks = 0
-        voidform.stacks = 0
-        voidform.currentStackTime = 0
-        animations.vfEnd:Play()
-        FinaliseVfRep()
-    end
-end
-
-local function CombatLogEventAsSpawn(destGUID)
-	if talents.aspirits.active then
-		targets = talents.aspirits.targets
-        if not targets[destGUID] then
-            targets[destGUID] = {}
-            targets[destGUID].asCount = 0
-            targets[destGUID].asSpawnTime = {}
-        end
-        targets[destGUID].asCount = targets[destGUID].asCount + 1
-        targets[destGUID].lastUpdateTime = GetTime()
-    end
-end
-
-local function CombatLogEventAsDespawn(destGUID)
-	if talents.aspirits.active then
-		targets = talents.aspirits.targets
-        if targets[destGUID] then
-            targets[destGUID].asCount = targets[destGUID].asCount - 1
-            targets[destGUID].lastUpdateTime = GetTime()
-            if targets[destGUID].asCount <= 0 then
-                targets[destGUID] = nil
-            end
-        end
-    end
-end
-
-local function CombatLogEventCttvSpawn(destGUID)
-	if talents.cttvoid.active then
-		talents.cttvoid.spawns[destGUID] = {}
-		talents.cttvoid.spawns[destGUID].spawnTime = GetTime()
-	end
-end
-
-local function CombatLogEventCttvCast(sourceGUID, event)
-	if event == "SPELL_AURA_APPLIED" then
-		talents.cttvoid.spawns[sourceGUID].isCasting = true
-	elseif event == "SPELL_AURA_REMOVED" then
-		talents.cttvoid.spawns[sourceGUID].isCasting = false
-	end
-end
-
-local function CombatLogEventPlayerDied()
-    if voidform.stacks > 0 then
-        FinaliseVfRep()
-    end
-    talents.aspirits.targets = {}
-    voidform.currentStackTime = 0
-    voidform.drainStacks = 0
-    voidform.stacks = 0
-    auras.linsanity.stacks = 0
-    auras.stmbuff.active = false
-    auras.stmdebuff.active = false
-    auras.voitorrent.active = false
-    animations.vfReady:Stop()
-	animations.vfEnd:Play()
-end
-
-function VilinkasInsanity:COMBAT_LOG_EVENT_UNFILTERED(...)
-	local _, event, _, sourceGUID, _, _, _, destGUID, _, _, _, spellId, spellName = CombatLogGetCurrentEventInfo()
-	--print(format("Name: %s id: %s source: %s dest: %s event: %s", spellName, spellId, sourceGUID, destGUID, event))
-	if sourceGUID == UnitGUID("player") then
-		--print(format("Name: %s id: %s source: %s dest: %s event: %s", spellName, spellId, sourceGUID, destGUID, event))
-		-- Voidform --
-		if spellId == voidform.id then
-			CombatLogEventVoidform(event)
-		-- Lingering Insianity --
-		elseif spellId == auras.linsanity.id then
-			if event == "SPELL_AURA_APPLIED" then
-				auras.linsanity.stacks = GetPlayerBuffCount(spellId)
-			elseif event == "SPELL_AURA_REMOVED_DOSE" then
-				--auras[spellIds.linsanity].stacks = auras[spellIds.linsanity].stacks - 1 -- Bfa
-				auras.linsanity.stacks = auras.linsanity.stacks - 2
-			elseif event == "SPELL_AURA_REMOVED" then
-				auras.linsanity.stacks = 0
-			end
-		-- Surrender to Madness --
-		elseif spellId == auras.stmbuff.id then
-			if event == "SPELL_AURA_APPLIED" then
-				auras.stmbuff.active = true
-				reports.current.stmduration = GetTime()
-			elseif event == "SPELL_AURA_REMOVED" then
-				auras.stmbuff.active = false
-				FinaliseVfRep()
-            end
-		elseif spellId == auras.stmdebuff.id then
-			if event == "SPELL_AURA_APPLIED" then
-				auras.stmdebuff.active = true
-				local duration, expirationTime = GetPlayerAuraTime(spellId, "HARMFUL")
-				auras.stmdebuff.duration = duration
-				auras.stmdebuff.expirationTime = expirationTime
-				frames.stmBorder:Show()
-				frames.stmBar:Show()
-			elseif event == "SPELL_AURA_REMOVED" then
-				auras.stmdebuff.active = false
-				frames.stmBorder:Hide()
-				frames.stmBar:Hide()
-			end
-		-- Power Infusion --
-		elseif spellId == auras.pinfusion.id then
-			if event == "SPELL_AURA_APPLIED" then
-				auras.pinfusion.active = true
-			elseif event == "SPELL_AURA_REMOVED" then
-				auras.pinfusion.active = false
-			end
-		-- Auspicious Spirits Spawn --
-		elseif spellId == talents.aspirits.spawnId then
-			if event == "SPELL_CAST_SUCCESS" then
-				CombatLogEventAsSpawn(destGUID)
-			end
-		-- Auspicious Spirits Despawn --
-		elseif spellId == talents.aspirits.despawnId then
-			if event == "SPELL_DAMAGE" or event == "SPELL_MISSED" then
-				CombatLogEventAsDespawn(destGUID)
-			end
-		-- Void Torrent --
-		elseif spellId == auras.voitorrent.id then
-			if event == "SPELL_AURA_APPLIED" then
-				auras.voitorrent.active = true
-			elseif event == "SPELL_AURA_REMOVED" then
-				auras.voitorrent.active = false
-			end
-		-- Mindbender --
-		elseif spellId == auras.mbender.id then
-			if event == "SPELL_SUMMON" then
-				auras.mbender.GUID = destGUID
-				local _, _, startTime, duration = GetTotemInfo(1)
-				auras.mbender.duration = duration
-				auras.mbender.startTime = startTime
-				auras.mbender.active = true
-				frames.mindbenderBar:Show()
-			end
-		end
-	elseif sourceGUID == auras.mbender.guid and event == "SWING_DAMAGE" then
-		auras.mbender.lastAttackTime = GetTime()
-	-- Mindbender Power Leech spell (200010)
-	elseif destGUID == UnitGUID("player") and spellId == 200010 and event == "SPELL_ENERGIZE" then
-		auras.mbender.lastAttackTime = GetTime()
-		auras.mbender.guid = sourceGUID
-	end
-	if event == "UNIT_DIED" then
-		if destGUID == UnitGUID("player") then
-			CombatLogEventPlayerDied()
-		elseif destGUID == auras.mbender.GUID then
-			auras.mbender.active = false
-			frames.mindbenderBar:Hide()
-		elseif talents.aspirits.targets[destGUID] then
-			talents.aspirits.targets[destGUID] = nil
-		end
-	end
-end
 
 -- Conversion function from RGBA to HEX, Credit: https://gist.github.com/marceloCodget/3862929
 local function RGBAToHex(rgba)
@@ -1107,7 +983,7 @@ local function AddBarToStack(bar, pos)
 end
 
 local default
-function VilinkasInsanity:UpdateSettings()
+function VilIns:UpdateSettings()
     if not db then
         default = {
             profile = {
@@ -1150,11 +1026,10 @@ function VilinkasInsanity:UpdateSettings()
                     vftimesize = 12,
                 },
                 misc = {
-					--lotvthreshold = 60, -- Bfa
-                    lotvthreshold = 65,
+                    lotvthreshold = 60,
                     lingeringinsanity = true,
                     vfdisreportingenabled = 2,
-                    vfsavereportingenabled = 1,
+                    vfsavereportingenabled = 2,
 					vfreportingmaxsaved = 3,
 					borderstmdebuffcolor = { 1.0, 0.0, 0.0, 1.0 }
                 },
@@ -1171,7 +1046,7 @@ function VilinkasInsanity:UpdateSettings()
                     barcolor = { 1, 1, 1, 1 },
                     deplete = false,
 				},
-				mindbender = {
+				sfiend = {
 					enable = true,
 					pos = "BOTTOM",
 					height = 10,
@@ -1207,10 +1082,10 @@ function VilinkasInsanity:UpdateSettings()
 	topOffsetStack, bottomOffsetStack = nil, nil
 
     -- General
-	frames.main:ClearAllPoints()
-	frames.main:SetPoint("CENTER", db.general.posx, db.general.posy)
-	frames.main:SetSize(db.general.width, db.general.height)
-	local bugFix = frames.main:GetWidth() -- If I dont call this function on frames.main I get wrong width later on when I need to update voidform mark. I know its weird :)
+	self:ClearAllPoints()
+	self:SetPoint("CENTER", db.general.posx, db.general.posy)
+	self:SetSize(db.general.width, db.general.height)
+	local bugFix = self:GetWidth() -- If I dont call this function on VilIns I get wrong width later on when I need to update voidform mark. I know its weird :)
 	-- Background --
 	frames.bg.tex:SetVertexColor(db.background.color[1], db.background.color[2], db.background.color[3], db.background.color[4])
 	-- Border --
@@ -1221,9 +1096,9 @@ function VilinkasInsanity:UpdateSettings()
 			db.misc.borderstmdebuffcolor[2], db.misc.borderstmdebuffcolor[3], db.misc.borderstmdebuffcolor[4])
 	end
 	local borderThickness = db.border.thickness
-	UpdateBorderSize(frames.border, borderThickness)
-	UpdateBorderSize(frames.vfBorder, borderThickness)
-	UpdateBorderSize(frames.stmBorder, borderThickness)
+	frames.border:SetBorderSize(borderThickness)
+	frames.vfBorder:SetBorderSize(borderThickness)
+	frames.stmBorder:SetBorderSize(borderThickness)
 	frames.stmBorder:Hide()
 	-- Bars --
 	local bartex = LSM:Fetch("statusbar", db.bars.texture)
@@ -1263,27 +1138,27 @@ function VilinkasInsanity:UpdateSettings()
 	reports.save = db.misc.vfsavereportingenabled
 	reports.maxSaved = db.misc.vfreportingmaxsaved
 	-- Mindbender --
-	auras.mbender.enable = db.mindbender.enable
-	frames.mindbenderBar.deplete = db.mindbender.deplete
-	frames.mindbenderBar:ClearAllPoints()
-	AddBarToStack(frames.mindbenderBar, db.mindbender.pos)
-	frames.mindbenderBar:SetStatusBarTexture(bartex)
-	frames.mindbenderBar:SetStatusBarColor(db.bars.asbarcolor[1], db.bars.asbarcolor[2], db.bars.asbarcolor[3], 1)
-	frames.mindbenderBar:SetValue(0)
-	frames.mindbenderBar:SetHeight(db.mindbender.height)
-	frames.mindbenderBar:SetScript("OnShow", function(self)
-		self:SetHeight(db.mindbender.height)
+	sfiend.enable = db.sfiend.enable
+	frames.sfiendBar.deplete = db.sfiend.deplete
+	frames.sfiendBar:ClearAllPoints()
+	AddBarToStack(frames.sfiendBar, db.sfiend.pos)
+	frames.sfiendBar:SetStatusBarTexture(bartex)
+	frames.sfiendBar:SetStatusBarColor(db.sfiend.barcolor[1], db.sfiend.barcolor[2], db.sfiend.barcolor[3], 1)
+	frames.sfiendBar:SetValue(0)
+	frames.sfiendBar:SetHeight(db.sfiend.height)
+	frames.sfiendBar:SetScript("OnShow", function(self)
+		self:SetHeight(db.sfiend.height)
 	end)
-	frames.mindbenderBar:SetScript("OnHide", function(self)
+	frames.sfiendBar:SetScript("OnHide", function(self)
 		self:SetHeight(0.01)
 	end)
-	--frames.mindbenderBar:Hide()
-	frames.mindbenderBar.tex:SetVertexColor(db.background.color[2], db.background.color[2], db.background.color[3], db.background.color[4])
-	frames.mindbenderBar.attackMark:ClearAllPoints()
-	frames.mindbenderBar.attackMark:SetWidth(db.mindbender.markthickness)
-	frames.mindbenderBar.attackMark.tex:SetVertexColor(db.mindbender.markcolor[1], db.mindbender.markcolor[2], db.mindbender.markcolor[3], db.mindbender.markcolor[4])
-	--frames.mindbenderBar.attackMark:Hide()
-	auras.mbender.active = true
+	frames.sfiendBar:Hide()
+	frames.sfiendBar.tex:SetVertexColor(db.background.color[2], db.background.color[2], db.background.color[3], db.background.color[4])
+	frames.sfiendBar.attackMark:ClearAllPoints()
+	frames.sfiendBar.attackMark:SetWidth(db.sfiend.markthickness)
+	frames.sfiendBar.attackMark.tex:SetVertexColor(db.sfiend.markcolor[1], db.sfiend.markcolor[2], db.sfiend.markcolor[3], db.sfiend.markcolor[4])
+	--frames.sfiendBar.attackMark:Hide()
+	--sfiend.active = true
 	-- GCD --
 	gcd.enable = db.gcd.enable
 	frames.gcdBar.deplete = db.gcd.deplete
