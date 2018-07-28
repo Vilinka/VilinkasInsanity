@@ -1,0 +1,154 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.blizzard.com/wow/ui/
+..\FrameXML\UI.xsd">
+	<Script file="VilinkasInsanity.lua"/>
+
+	<StatusBar name="VilinkasInsnaityBuilderBar" virtual="true" mixin="VilinkasInsnaityBuilder">
+		<Scripts>
+			<OnLoad method="OnLoad"/>
+			<OnSizeChanged method="OnChanged"/>
+			<OnValueChanged method="OnChanged"/>
+			<OnMinMaxChanged method="OnChanged"/>
+		</Scripts>
+	</StatusBar>
+
+	<Frame name="VilinkasInsnaityAnimatedBorderFrame" alpha="0" virtual="true" mixin="VilinkasInsnaityAnimatedBorder">
+		<Animations>
+			<AnimationGroup parentKey="Pulse" looping="REPEAT" setToFinalAlpha="true">
+				<Alpha parentKey="AlphaOut" order="1" smoothing="OUT"/>
+				<Alpha parentKey="AlphaIn" order="2" smoothing="IN"/>
+				<Scripts>
+					<OnPlay>
+						local parent = self:GetParent()
+						parent.Fadeout:Stop()
+						parent:SetAlpha(1)
+					</OnPlay>
+					<OnFinished>
+						self:GetParent():SetAlpha(0)
+					</OnFinished>
+				</Scripts>
+			</AnimationGroup>
+			<AnimationGroup parentKey="Fadeout" setToFinalAlpha="true">
+				<Alpha parentKey="Alpha" duration="0.2" toAlpha="0" order="1"/>
+				<Scripts>
+					<OnPlay>
+						local parent = self:GetParent()
+						parent.Pulse:Stop()
+						parent:SetAlpha(1)
+					</OnPlay>
+					<OnFinished>
+						local parent = self:GetParent()
+						parent:SetBackdropBorderColor(unpack(parent.voidformColor))
+						parent:SetAlpha(0)
+						parent.voidformReady = false
+						parent:UpdatePower()
+					</OnFinished>
+				</Scripts>
+			</AnimationGroup>
+		</Animations>
+		<Scripts>
+			<OnLoad method="OnLoad"/>
+		</Scripts>
+	</Frame>
+
+	<Frame name="VilinkasInsanityExtraFrameTemplate" virtual="true" mixin="VilinkasInsanityExtraFrame">
+		<Scripts>
+			<OnLoad method="OnLoad"/>
+			<OnShow>
+				print("OnShow" .. self:GetName())
+				self:SetHeight(self.height)
+			</OnShow>
+			<OnHide>
+				print("OnHide" .. self:GetName())
+				self:SetHeight(0.05)
+			</OnHide>
+			<OnSizeChanged method="OnSizeChanged"/>
+		</Scripts>
+	</Frame>
+
+    <StatusBar name="VilinkasInsanityBar" parent="UIParent" mixin="VilinkasInsnaityBuilder, VilinkasInsnaity">
+        <Frames>
+			<Frame parentKey="BackgroundFrame" setAllPoints="true" useParentLevel="true" mixin="VilinkasInanityBackground">
+				<Scripts>
+					<OnLoad method="OnLoad"/>
+				</Scripts>
+			</Frame>
+			<Frame parentKey="BorderFrame" setAllPoints="true" useParentLevel="true" mixin="VilinkasInanityBorder">
+				<Frames>
+					<Frame parentKey="NormalBorderFrame" setAllPoints="true" frameLevel="11"/>
+					<Frame parentKey="AnimatedBorderFrame" setAllPoints="true" frameLevel="10" inherits="VilinkasInsnaityAnimatedBorderFrame"/>
+				</Frames>
+				<Scripts>
+					<OnLoad method="OnLoad"/>
+				</Scripts>
+			</Frame>
+
+			<StatusBar parentKey="CastGainBar" setAllPoints="true" useParentLevel="true" inherits="VilinkasInsnaityBuilderBar"/>
+			<StatusBar parentKey="PassiveGainBar" setAllPoints="true" useParentLevel="true" inherits="VilinkasInsnaityBuilderBar"/>
+			
+			<StatusBar name="GcdBar" parentKey="GcdBar" hidden="true" useParentLevel="true" inherits="VilinkasInsanityExtraFrameTemplate" mixin="VilinkasInsanityGcd"/>
+			<StatusBar name="ManaBar" parentKey="ManaBar" hidden="true" useParentLevel="true" inherits="VilinkasInsanityExtraFrameTemplate" mixin="VilinkasInsanityMana">
+				<Layer level="ARTWORK">
+					<Texture parentKey="ManaCostPredictionBar" hidden="true"/>
+				</Layer>
+			</StatusBar>
+			<StatusBar name="ShadowfiendBar" parentKey="ShadowfiendBar" hidden="true" useParentLevel="true"  inherits="VilinkasInsanityExtraFrameTemplate">
+				<Layers>
+					<Layer level="ARTWORK" textureSubLevel="1">
+						<Texture parentKey="NextAttackTexture" file="Interface\Buttons\WHITE8X8" hidden="true"/>
+					</Layer>
+					<Layer level="ARTWORK" textureSubLevel="2">
+						<FontString parentKey="TimeLeftText">
+							<Anchors>
+								<Anchor point="RIGHT" relativePoint="RIGHT" x="-2" y="0"/>
+							</Anchors>
+						</FontString>
+					</Layer>
+				</Layers>
+			</StatusBar>
+        </Frames>
+		<Layers>
+			<Layer level="ARTWORK" textureSubLevel="1">
+				<Texture parentKey="VoidformTresholdTexture" file="Interface\Buttons\WHITE8X8" hidden="true"/>
+			</Layer>
+			<Layer level="ARTWORK" textureSubLevel="2">
+				<FontString parentKey="LeftText">
+					<Anchors>
+						<Anchor point="LEFT" relativePoint="LEFT" x="2" y="0"/>
+					</Anchors>
+				</FontString>
+				<FontString parentKey="CenterText">
+					<Anchors>
+						<Anchor point="CENTER" relativePoint="CENTER" x="0" y="0"/>
+					</Anchors>
+				</FontString>
+				<FontString parentKey="RightText">
+					<Anchors>
+						<Anchor point="RIGHT" relativePoint="RIGHT" x="-2" y="0"/>
+					</Anchors>
+				</FontString>
+			</Layer>
+		</Layers>
+		<Animations>
+			<AnimationGroup parentKey="FadeoutAnim" setToFinalAlpha="true">
+				<Alpha parentKey="Alpha" fromAlpha="1" order="1"/>
+				<Scripts>
+					<OnStop>
+						local parent = self:GetParent();
+						parent:SetAlpha(1)
+					</OnStop>
+				</Scripts>
+			</AnimationGroup>
+		</Animations>
+		<Scripts>
+			<OnLoad method="OnLoad"/>
+			<OnEvent method="OnEvent"/>
+			<OnSizeChanged method="OnChanged"/>
+			<OnValueChanged method="OnChanged"/>
+			<OnMinMaxChanged>
+				self:OnChanged()
+				self.CastGainBar:SetMinMaxValues(min, max)
+				self.PassiveGainBar:SetMinMaxValues(min, max)
+			</OnMinMaxChanged>
+		</Scripts>
+	</StatusBar>
+</Ui>
