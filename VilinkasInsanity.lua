@@ -154,8 +154,6 @@ local function PlayerHasDebuff(id)
 	end
 end
 
-VilinkasInsnaity = {}
-
 VilinkasInsnaityBuilder = {}
 
 function VilinkasInsnaityBuilder:OnLoad()
@@ -374,7 +372,7 @@ function VilinkasInsnaityAnimatedBorder:UpdateSettings(newSettings)
 			edgeFile = LSM:Fetch("border", borderSettings.animated.texture),
 			tile = true,
 			edgeSize = thickness + offset.thickness,
-			alphaMode = "DISABLE",
+			--alphaMode = "DISABLE",
 			insets = {0, 0, 0, 0}
 		})
 		self.voidformColor = borderSettings.animated.colorvf
@@ -386,6 +384,12 @@ function VilinkasInsnaityAnimatedBorder:UpdateSettings(newSettings)
 		self.Pulse.AlphaOut:SetDuration(animationSettings.borderduration / 2)
 		self.Pulse.AlphaIn:SetDuration(animationSettings.borderduration / 2)
 		self.Fadeout.Alpha:SetFromAlpha(self.voidformColor[4])
+
+		if (borderSettings.animated.animatedontop) then
+			self:SetFrameLevel(12)
+		else
+			self:SetFrameLevel(10)
+		end
 	else
 		self:SetBackdrop(nil)
 	end
@@ -399,13 +403,16 @@ function VilinkasInsanityExtraFrame:OnLoad()
 end
 
 function VilinkasInsanityExtraFrame:OnSizeChanged(w, h)
-	print("OnSizeChanged" .. self:GetName())
 	local parent = self:GetParent()
 	parent:ExtraBarOnSizeChanged(self)
 end
 
-function VilinkasInsanityExtraFrame:UpdateSettings(height)
+function VilinkasInsanityExtraFrame:UpdateSettings(height, active)
 	self.height = height
+	self.active = active
+	if (self.active) then
+		self:Hide()
+	end
 end
 
 VilinkasInsanityGcd = {}
@@ -446,9 +453,9 @@ end
 function VilinkasInsanityGcd:UpdateSettings(newSettings)
 	local gcdSettings = newSettings.bars.gcd
 	local height = gcdSettings.height
-	VilinkasInsanityExtraFrame.UpdateSettings(self, height)
+	local active = gcdSettings.enable
+	VilinkasInsanityExtraFrame.UpdateSettings(self, height, active)
 
-	self.active = gcdSettings.enable
 	self.deplete = gcdSettings.deplete
 
 	if gcdSettings.background.enable then
@@ -501,9 +508,7 @@ function VilinkasInsanityMana:UpdatePower(powerToken)
 			self:SetValue(0);
 			self:Hide();
 		else
-			if (not self:IsVisible()) then
-				self:Show()
-			end
+			self:Show()
 			self:SetValue(ptc)
 		end
 	end
@@ -512,9 +517,8 @@ end
 function VilinkasInsanityMana:UpdateSettings(newSettings)
 	local manaSettings = newSettings.bars.mana
 	local height = manaSettings.height
-	VilinkasInsanityExtraFrame.UpdateSettings(self, height)
-
-	self.active = manaSettings.enable
+	local active = manaSettings.enable
+	VilinkasInsanityExtraFrame.UpdateSettings(self, height, active)
 
 	if manaSettings.background.enable then
 		self:SetBackdrop({
@@ -535,21 +539,29 @@ function VilinkasInsanityMana:UpdateSettings(newSettings)
 	end
 	self:SetStatusBarTexture(bartex)
 	self:SetStatusBarColor(unpack(manaSettings.color))
+
+	self:Initialize(manaSettings.threshold)
 end
 
-local function UpdateMarkPosition(mark, x)
-	if x > 1 then
-		x = 1
-	elseif x < 0 then
-		x = 0
+VilinkasInsanityMark = {}
+
+function VilinkasInsanityMark:SetOffset(offset)
+	if offset > 1 then
+		offset = 1
+	elseif offset < 0 then
+		offset = 0
 	end
-	local parent = mark:GetParent()
+
+	local parent = self:GetParent()
 	local parentWidth = parent:GetWidth()
-	local markHalfWidth = mark:GetWidth() / 2
-	mark:ClearAllPoints()
-	mark:SetPoint("TOPLEFT", parent, "TOPLEFT", parentWidth * x - markHalfWidth, 0)
-	mark:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -parentWidth * (1 - x) + markHalfWidth, 0)
+	local markHalfWidth = self.halfWidth
+
+	self:ClearAllPoints()
+	self:SetPoint("TOPLEFT", parent, "TOPLEFT", parentWidth * offset - markHalfWidth, 0)
+	self:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -parentWidth * (1 - offset) + markHalfWidth, 0)
 end
+
+VilinkasInsnaity = {}
 
 local function GetInsanityDrain(stack)
 	return 6 + ((stack - 1) * (0.8) * auras.vform.drainMod)
@@ -667,7 +679,7 @@ function VilinkasInsnaity:UpdateMaxPower()
 
 	if vform.threshold <= 99 then
 		local offsetX = vform.threshold / maxValue
-		UpdateMarkPosition(self.VoidformTresholdTexture, offsetX)
+		self.VoidformTreshold:SetOffset(offsetX)
 	end
 
 	self.AnimatedBorderFrame:Initialize(vform.threshold)
@@ -895,6 +907,8 @@ function VilinkasInsnaity:OnLoad()
 		["BOTTOM_OUTSIDE"] = {},
 		["BOTTOM_INSIDE"] = {}
 	}
+
+	self.VoidformTreshold:SetParent(self.BackgroundFrame)
 
 	VilinkasInsnaityBuilder.OnLoad(self)
 
@@ -1182,7 +1196,6 @@ end
 
 function VilinkasInsnaity:ExtraBarOnSizeChanged(extraBar)
 	local dock = extraBar.dock
-	print(dock)
 	if dock == "TOP_OUTSIDE" then
 		local borderFrame = self.BorderFrame
 		if extraBar:IsVisible() then
@@ -1207,16 +1220,12 @@ function VilinkasInsnaity:ExtraBarOnSizeChanged(extraBar)
 			borderFrame:SetOffset(borderFrame:GetOffset("BOTTOM") - extraBar.height, "BOTTOM")
 		end
 	elseif dock == "BOTTOM_INSIDE" then
-		print("ExtraBarOnSizeChanged")
-		print(extraBar:IsVisible())
 		if extraBar:IsVisible() then
 			local newOffset = self:GetOffset("BOTTOM") + extraBar.height
-			print(newOffset)
 			self:SetOffset(newOffset, "BOTTOM")
 			self.BackgroundFrame:SetOffset(newOffset, "BOTTOM")
 		else
 			local newOffset = self:GetOffset("BOTTOM") - extraBar.height
-			print(newOffset)
 			self:SetOffset(newOffset, "BOTTOM")
 			self.BackgroundFrame:SetOffset(newOffset, "BOTTOM")
 		end
@@ -1342,7 +1351,7 @@ function VilinkasInsnaity:UpdateSettings()
 							texture = "Vilinka's Insanity Glow",
 							animatedontop = false,
 							offset = {
-								thickness = 8,
+								thickness = 6,
 								left = 8,
 								right = 8,
 								top = 8,
@@ -1372,18 +1381,19 @@ function VilinkasInsnaity:UpdateSettings()
 						height = 5.0,
 						background = {
 							enable = true,
-							color = { 0.2, 0.2, 0.2, 0.5 },
+							color = { 0.15, 0.15, 0.15, 1 },
 							texture = "Solid"
 						},
 					},
 					mana = {
 						enable = true,
-						color = { 0, 0, 1, 1 },
+						color = { 0.31, 0.45, 0.85, 1.0 },
 						texture = "Blizzard Raid Bar",
 						height = 5.0,
+						threshold = 0.5,
 						background = {
 							enable = true,
-							color = { 0.2, 0.2, 0.2, 0.5 },
+							color = { 0.01, 0.05, 0.13, 1.0 },
 							texture = "Solid"
 						}
 					},
@@ -1537,13 +1547,13 @@ function VilinkasInsnaity:UpdateSettings()
 	-- Voidform Threshold Mark --
 	auras.vform.thresholdOverride = db.misc.voidformthreshold
 	if auras.vform.thresholdOverride < 100 and db.bars.main.voidformthreshold.enable then
-		self.VoidformTresholdTexture:ClearAllPoints()
-		self.VoidformTresholdTexture:SetWidth(db.bars.main.voidformthreshold.thickness)
-		self.VoidformTresholdTexture:SetVertexColor(unpack(db.bars.main.voidformthreshold.color))
-		self.VoidformTresholdTexture:Show()
-		
+		--self.VoidformTreshold:ClearAllPoints()
+		--self.VoidformTreshold:SetWidth(db.bars.main.voidformthreshold.thickness)
+		self.VoidformTreshold.halfWidth = db.bars.main.voidformthreshold.thickness / 2
+		self.VoidformTreshold.Texture:SetVertexColor(unpack(db.bars.main.voidformthreshold.color))
+		self.VoidformTreshold:Show()
 	else
-		self.VoidformTresholdTexture:Hide()
+		self.VoidformTreshold:Hide()
 	end
 	self:UpdateMaxPower()
 

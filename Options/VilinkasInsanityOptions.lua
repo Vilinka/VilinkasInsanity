@@ -1,5 +1,4 @@
-if select(2, UnitClass("player")) ~= "PRIEST" then return end
---if tonumber(select(4, GetBuildInfo())) < 80000 then return end
+--if select(2, UnitClass("player")) ~= "PRIEST" then return end
 
 local name, addon = ...
 _G[name] = addon
@@ -9,11 +8,11 @@ local AceConfig = LibStub("AceConfig-3.0")
 local AceConfigDialog = LibStub("AceConfigDialog-3.0")
 local LSM = LibStub("LibSharedMedia-3.0")
 
-local VilinkasInsanity = _G["VilinkasInsanity"]
+--local VilinkasInsanity = _G["VilinkasInsanity"]
 local VilinkasInsanityVer = GetAddOnMetadata("VilinkasInsanity", "Version")
-local vilinsFrame, oocFadeAnim = VilinkasInsanity, VilinkasInsanity.animations.fade
+local vilinsFrame, oocFadeAnim = VilinkasInsanityBar, VilinkasInsanityBar.FadeoutAnim
 
-local title = VilinkasInsanity.title
+local title = VilinkasInsanityBar.title
 
 local isVisible
 local db
@@ -26,11 +25,32 @@ local container, window
 
 addon.frame = frame
 
+addon.optionsTable = {
+	type = "group",
+	args = {
+		versionHeader = {
+			order = 1,
+			type = "header",
+			name = VilinkasInsanityVer,
+			width = "full",
+		},
+		defaults = {
+			order = 2,
+			type = 'execute',
+			name = "Reset Defaults",
+			func = function() 
+				VilinkasInsanityBar.db:ResetProfile()
+				VilinkasInsanityBar:UpdateSettings()
+			end,
+		}
+	}
+}	
+
 local function CreateOptions()
 	local function Get(info)
 		local category, option = string.split(".", info.arg)
 		--print("Set: category: " .. category .. " option: ".. option)
-		local val = VilinkasInsanity.db.profile[category][option]
+		local val = VilinkasInsanityBar.db.profile[category][option]
 		--print(category .. "/" .. option)
 		if type(val) == "table" then
 			--print(unpack(val))
@@ -50,24 +70,19 @@ local function CreateOptions()
 			value[2] = select(2, ...)
 			value[3] = select(3, ...)
 			value[4] = select(4, ...)
-			VilinkasInsanity.db.profile[category][option] = value
+			VilinkasInsanityBar.db.profile[category][option] = value
 		else
-			VilinkasInsanity.db.profile[category][option] = select(1, ...)
+			VilinkasInsanityBar.db.profile[category][option] = select(1, ...)
 		end
 		
-		if option == "orientation" then
-			local width = VilinkasInsanity.db.profile.general.width
-			local height = VilinkasInsanity.db.profile.general.height
-			VilinkasInsanity.db.profile.general.width = height
-			VilinkasInsanity.db.profile.general.height = width
-		end
-		
-		VilinkasInsanity:UpdateSettings()
+		VilinkasInsanityBar:UpdateSettings()
 	end
 	
 	local function ClearVfReps()
-		VilinkasInsanity:ClearSavedVfReps()
+		VilinkasInsanityBar:ClearSavedVfReps()
 	end
+
+	--statusBarHash = LSM:HashTable("statusbar")
 	
 	local options = {
 		type = "group",
@@ -75,118 +90,7 @@ local function CreateOptions()
 		get = Get,
 		set = Set,
 		args = {
-			displayGroup = {
-				type = "group",
-				name = "General",
-				order = 1,
-				args = {
-					posheader = {
-						type = "header",
-						name = "Position",
-						order = 4
-					},
-					--[[anchor = {
-						type = 'select',
-						name = "",
-						order = 5,
-						values = { 
-							["SCREEN"] = "Screen",
-							["PRD"] = "Personal resource display",
-						},
-						arg = "general.anchor"
-					},]]--
-					posx = {
-						type = "range",
-						name = "X",
-						order = 5,
-						softMin = -math.floor((UIParent:GetWidth() / 2) + 0.5),
-						softMax = math.floor((UIParent:GetWidth() / 2) + 0.5),
-						step = 1,
-						arg = "general.posx"
-					},
-					posy = {
-						type = "range",
-						name = "Y",
-						order = 5,
-						softMin = -math.floor((UIParent:GetHeight() / 2) + 0.5),
-						softMax = math.floor((UIParent:GetHeight() / 2)  + 0.5),
-						step = 1,
-						arg = "general.posy"
-					},
-					sizeheader = {
-						type = "header",
-						name = "Size",
-						order = 6
-					},
-					width = {
-						type = "range",
-						name = "Width",
-						order = 7,
-						min=1,
-						softMin = 10,
-						softMax = 500,
-						step = 1,
-						arg = "general.width"
-					},
-					height = {
-						type = "range",
-						name = "Height",
-						order = 7,
-						min=1,
-						softMin = 10,
-						softMax = 500,
-						step = 1,
-						arg = "general.height"
-					},
-					oocheader = {
-						type = "header",
-						name = "Out of combat",
-						order = 8
-					},
-					alphaooc = {
-						type = "range",
-						name = "Opacity out of combat",
-						arg = "general.alphaooc",
-						order = 9,
-						min = 0,
-						max = 1,
-						step = 0.01,
-						isPercent = true
-					},
-					backgroundheader = {
-						type = "header",
-						name = "Background",
-						order = 10
-					},
-					backgroundcolor = {
-						type = "color",
-						name = "Color",
-						order = 11,
-						hasAlpha = true,
-						arg = "background.color"
-					},
-					borderheader = {
-						type = "header",
-						name = "Border",
-						order = 12
-					},
-					bordercolor = {
-						type = "color",
-						name = "Color",
-						order = 13,
-						hasAlpha = true,
-						arg = "border.color"
-					},
-					borderthickness = {
-						type = "range",
-						name = "Thickness",
-						order = 13,
-						min = 1,
-						softMax = 5,
-						step = 1,
-						arg = "border.thickness"
-					},
-					vfmarkheader = {
+					--[[vfmarkheader = {
 						type = "header",
 						name = "Enter voidform mark",
 						order = 14
@@ -208,7 +112,7 @@ local function CreateOptions()
 						arg = "overlay.thickness"
 					},
 				}
-			},
+			}]]--
 			bars = {
 				type = "group",
 				name = "Bars",
@@ -687,6 +591,12 @@ local function CreateOptions()
 			}
 		}
 	}
+			
+
+	--print(general.name)
+	--print(general.order)
+
+	options.args.general = addon.optionsTable.general
 	
 	return options
 end
@@ -724,29 +634,31 @@ local function GetPositionRelToCenter(point, xOffset, yOffset)
 end
 
 local function UnlockFrame()
-	vilinsFrame:SetMovable(true)
-	VilinkasInsanity:UnregisterEvent("PLAYER_REGEN_ENABLED")
-	VilinkasInsanity:UnregisterEvent("PLAYER_REGEN_DISABLED")
-	vilinsFrame:Show()
-	vilinsFrame:SetAlpha(1)
+	VilinkasInsanityBar:SetMovable(true)
+	VilinkasInsanityBar:UnregisterEvent("PLAYER_REGEN_ENABLED")
+	VilinkasInsanityBar:UnregisterEvent("PLAYER_REGEN_DISABLED")
+	VilinkasInsanityBar:Show()
+	VilinkasInsanityBar:SetAlpha(1)
 end
 
 local function LockFrame()
-	vilinsFrame:SetMovable(false)
-	--VilinkasInsanity:Setup()
-	VilinkasInsanity:SetupPlayerState()
+	VilinkasInsanityBar:SetMovable(false)
+	VilinkasInsanityBar:Setup()
+	--VilinkasInsanityBar:RegisterEvent("PLAYER_REGEN_ENABLED")
+	--VilinkasInsanityBar:RegisterEvent("PLAYER_REGEN_DISABLED")
+	VilinkasInsanityBar:UpdatePlayerState()
 end
 
 local function OnMouseDown()
-	vilinsFrame:StartMoving()
+	VilinkasInsanityBar:StartMoving()
 end
 
 local function OnMouseUp()
-	vilinsFrame:StopMovingOrSizing()
-	local point, _, _, xOffset, yOffset = vilinsFrame:GetPoint(1)
+	VilinkasInsanityBar:StopMovingOrSizing()
+	local point, _, _, xOffset, yOffset = VilinkasInsanityBar:GetPoint(1)
 	xOffset, yOffset = GetPositionRelToCenter(point, xOffset, yOffset)
-	VilinkasInsanity.db.profile.general.posx = xOffset
-	VilinkasInsanity.db.profile.general.posy = yOffset
+	VilinkasInsanityBar.db.profile.general.posx = xOffset
+	VilinkasInsanityBar.db.profile.general.posy = yOffset
 	AceConfigDialog:Open("VilinkasInsanityOptions", container)
 end
 
@@ -754,13 +666,18 @@ local function OnClose()
 	addon:Hide()
 end
 
+function addon:ReloadWindow()
+	AceConfigDialog:Open("VilinkasInsanityOptions", container)
+end
+
 local function InitFrames()
 	container = AceGUI:Create("SimpleGroup")
 	
 	window = AceGUI:Create("Frame")
-	window:SetTitle("Vilinka's Insanity Options (" .. VilinkasInsanityVer .. ")")
+	window:SetTitle("Vilinka's Insanity")
 	window:SetLayout("Fill")
 	window:SetCallback("OnClose", OnClose)
+
 	window:AddChild(container)
 	
 	moverFrame:ClearAllPoints()
@@ -770,13 +687,18 @@ local function InitFrames()
 	moverFontString:SetPoint("CENTER", moverFrame, "TOP", 0, 10)
 end
 
+function addon:RegisterOptions(options)
+	local order = #self.options
+	self.options[#options + 1] = options:CreateOptions(order)
+end
+
 frame:RegisterEvent("ADDON_LOADED")
 function frame:ADDON_LOADED(...)
 	if name == ...	then
 		local yOffset = UIParent:GetHeight()
 		default = {
 			profile = {
-				width = 600,
+				width = 635,
 				top = yOffset - 50,
 				left = 50,
 			}
@@ -788,7 +710,7 @@ function frame:ADDON_LOADED(...)
 		
 		window:SetStatusTable(db)
 		
-		AceConfig:RegisterOptionsTable("VilinkasInsanityOptions", CreateOptions())
+		AceConfig:RegisterOptionsTable("VilinkasInsanityOptions", addon.optionsTable)
 		AceConfigDialog:Open("VilinkasInsanityOptions", container)
 		
 		self:ACTIVE_TALENT_GROUP_CHANGED()

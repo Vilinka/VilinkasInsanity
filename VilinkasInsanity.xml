@@ -54,15 +54,23 @@
 		<Scripts>
 			<OnLoad method="OnLoad"/>
 			<OnShow>
-				print("OnShow" .. self:GetName())
 				self:SetHeight(self.height)
+				self:OnSizeChanged()
 			</OnShow>
 			<OnHide>
-				print("OnHide" .. self:GetName())
-				self:SetHeight(0.05)
+				self:SetHeight(0.01)
+				self:OnSizeChanged()
 			</OnHide>
-			<OnSizeChanged method="OnSizeChanged"/>
+			<!--<OnSizeChanged method="OnSizeChanged"/>-->
 		</Scripts>
+	</Frame>
+
+	<Frame name="VilinkasInsanityMarkTemplate" virtual="true" mixin="VilinkasInsanityMark">
+		<Layers>
+			<Layer level="ARTWORK" textureSubLevel="1">
+				<Texture parentKey="Texture" file="Interface\Buttons\WHITE8X8" setAllPoints="true"/>
+			</Layer>
+		</Layers>
 	</Frame>
 
     <StatusBar name="VilinkasInsanityBar" parent="UIParent" mixin="VilinkasInsnaityBuilder, VilinkasInsnaity">
@@ -85,13 +93,9 @@
 			<StatusBar parentKey="CastGainBar" setAllPoints="true" useParentLevel="true" inherits="VilinkasInsnaityBuilderBar"/>
 			<StatusBar parentKey="PassiveGainBar" setAllPoints="true" useParentLevel="true" inherits="VilinkasInsnaityBuilderBar"/>
 			
-			<StatusBar name="GcdBar" parentKey="GcdBar" hidden="true" useParentLevel="true" inherits="VilinkasInsanityExtraFrameTemplate" mixin="VilinkasInsanityGcd"/>
-			<StatusBar name="ManaBar" parentKey="ManaBar" hidden="true" useParentLevel="true" inherits="VilinkasInsanityExtraFrameTemplate" mixin="VilinkasInsanityMana">
-				<Layer level="ARTWORK">
-					<Texture parentKey="ManaCostPredictionBar" hidden="true"/>
-				</Layer>
-			</StatusBar>
-			<StatusBar name="ShadowfiendBar" parentKey="ShadowfiendBar" hidden="true" useParentLevel="true"  inherits="VilinkasInsanityExtraFrameTemplate">
+			<StatusBar name="VilinkasInsanityGcdBar" parentKey="GcdBar" hidden="true" useParentLevel="true" mixin="VilinkasInsanityGcd" inherits="VilinkasInsanityExtraFrameTemplate"/>
+			<StatusBar name="VilinkasInsanityManaBar" parentKey="ManaBar" hidden="true" useParentLevel="true" mixin="VilinkasInsanityMana" inherits="VilinkasInsanityExtraFrameTemplate"/>
+			<StatusBar name="VilinkasInsanityShadowfiendBar" parentKey="ShadowfiendBar" hidden="true" useParentLevel="true" inherits="VilinkasInsanityExtraFrameTemplate">
 				<Layers>
 					<Layer level="ARTWORK" textureSubLevel="1">
 						<Texture parentKey="NextAttackTexture" file="Interface\Buttons\WHITE8X8" hidden="true"/>
@@ -105,11 +109,10 @@
 					</Layer>
 				</Layers>
 			</StatusBar>
+
+			<Frame parentKey="VoidformTreshold" hidden="true" inherits="VilinkasInsanityMarkTemplate"/>
         </Frames>
 		<Layers>
-			<Layer level="ARTWORK" textureSubLevel="1">
-				<Texture parentKey="VoidformTresholdTexture" file="Interface\Buttons\WHITE8X8" hidden="true"/>
-			</Layer>
 			<Layer level="ARTWORK" textureSubLevel="2">
 				<FontString parentKey="LeftText">
 					<Anchors>
