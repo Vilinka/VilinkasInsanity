@@ -95,11 +95,11 @@
 			
 			<StatusBar name="VilinkasInsanityGcdBar" parentKey="GcdBar" hidden="true" useParentLevel="true" mixin="VilinkasInsanityGcd" inherits="VilinkasInsanityExtraFrameTemplate"/>
 			<StatusBar name="VilinkasInsanityManaBar" parentKey="ManaBar" hidden="true" useParentLevel="true" mixin="VilinkasInsanityMana" inherits="VilinkasInsanityExtraFrameTemplate"/>
-			<StatusBar name="VilinkasInsanityShadowfiendBar" parentKey="ShadowfiendBar" hidden="true" useParentLevel="true" inherits="VilinkasInsanityExtraFrameTemplate">
+			<StatusBar name="VilinkasInsanityShadowfiendBar" parentKey="ShadowfiendBar" hidden="true"  useParentLevel="true" mixin="VilinkasInsnaityGenerator, VilinkasInsanityShadowfiend" inherits="VilinkasInsanityExtraFrameTemplate">
+				<Frames>
+					<Frame parentKey="NextAttackMark" hidden="true" inherits="VilinkasInsanityMarkTemplate"/>
+				</Frames>
 				<Layers>
-					<Layer level="ARTWORK" textureSubLevel="1">
-						<Texture parentKey="NextAttackTexture" file="Interface\Buttons\WHITE8X8" hidden="true"/>
-					</Layer>
 					<Layer level="ARTWORK" textureSubLevel="2">
 						<FontString parentKey="TimeLeftText">
 							<Anchors>
@@ -108,10 +108,20 @@
 						</FontString>
 					</Layer>
 				</Layers>
+				<Scripts>
+					<OnEvent method="OnEvent"/>
+				</Scripts>
 			</StatusBar>
 
 			<Frame parentKey="VoidformTreshold" hidden="true" inherits="VilinkasInsanityMarkTemplate"/>
-        </Frames>
+        
+			<Frame parentKey="AuspiciousSpiritsTracker" mixin="VilinkasInsnaityGenerator, VilinkasInsanityAuspiciousSpiritsTracker">
+				<Scripts>
+					<OnLoad method="OnLoad"/>
+					<OnEvent method="OnEvent"/>
+				</Scripts>
+			</Frame>
+		</Frames>
 		<Layers>
 			<Layer level="ARTWORK" textureSubLevel="2">
 				<FontString parentKey="LeftText">

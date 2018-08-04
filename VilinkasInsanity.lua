@@ -1,9 +1,10 @@
 local LSM = LibStub("LibSharedMedia-3.0")
-local pairs, ipairs, select = pairs, ipairs, select
+local pairs, ipairs, select, unpack = pairs, ipairs, select, unpack
 local format, sqrt = format, sqrt
 local GetTime, GetNetStats, GetSpellCooldown = GetTime, GetNetStats, GetSpellCooldown
-local UnitAura, UnitPower, UnitAffectingCombat = UnitAura, UnitPower, UnitAffectingCombat
+local UnitAura, UnitPower, UnitAffectingCombat, UnitGUID = UnitAura, UnitPower, UnitAffectingCombat, UnitGUID
 local GetSpellPowerCost = GetSpellPowerCost
+local CombatLogGetCurrentEventInfo = CombatLogGetCurrentEventInfo
 
 local title = "|cFF9370DB" .. select(2, GetAddOnInfo(...)) .. "|r"
 --VilinkasInsanity.title = title
@@ -143,15 +144,14 @@ local function GetPlayerBuffInfo(id)
 	return GetPlayerAuraInfo(id, "HELPFUL")
 end
 
-local function PlayerHasDebuff(id)
-	for i = 1, 40 do
-		local spellId = select(10, UnitAura("player", i, "HARMFUL"))
-		if (not spellId) then
-			break;
-		elseif (id == spellId) then
-			return true
-		end
-	end
+local function IsPriest()
+	local _, class = UnitClass("player");
+	return (class == "PRIEST")
+end
+
+local function IsShadow()
+	local spec = GetSpecialization()
+	return (spec == SPEC_PRIEST_SHADOW)
 end
 
 VilinkasInsnaityBuilder = {}
@@ -279,7 +279,7 @@ function VilinkasInanityBorder:SetOffset(offset, point)
 
 	self:ClearAllPoints()
 	self:SetPoint("TOPLEFT", 0, self.offset["TOP"])
-	self:SetPoint("BOTTOMRIGHT", 0, self.offset["BOTTOM"])
+	self:SetPoint("BOTTOMRIGHT", 0, -self.offset["BOTTOM"])
 end
 
 function VilinkasInanityBorder:GetOffset(point)
@@ -355,7 +355,6 @@ end
 
 function VilinkasInsnaityAnimatedBorder:UpdateSettings(newSettings)
 	local borderSettings = newSettings.general.border
-	local animationSettings = newSettings.animations
 
 	if borderSettings.animated.enable then
 		local thickness = borderSettings.normal.thickness
@@ -379,10 +378,12 @@ function VilinkasInsnaityAnimatedBorder:UpdateSettings(newSettings)
 		self:SetBackdropBorderColor(unpack(self.voidformColor))
 		self.stmdebuffColor = borderSettings.animated.colorstm
 
+		-- Animations
+		local animationSettings = newSettings.animations.animatedborder
 		self.Pulse.AlphaOut:SetToAlpha(self.voidformColor[4])
 		self.Pulse.AlphaIn:SetFromAlpha(self.voidformColor[4])
-		self.Pulse.AlphaOut:SetDuration(animationSettings.borderduration / 2)
-		self.Pulse.AlphaIn:SetDuration(animationSettings.borderduration / 2)
+		self.Pulse.AlphaOut:SetDuration(animationSettings.pulseduration / 2)
+		self.Pulse.AlphaIn:SetDuration(animationSettings.pulseduration / 2)
 		self.Fadeout.Alpha:SetFromAlpha(self.voidformColor[4])
 
 		if (borderSettings.animated.animatedontop) then
@@ -393,6 +394,24 @@ function VilinkasInsnaityAnimatedBorder:UpdateSettings(newSettings)
 	else
 		self:SetBackdrop(nil)
 	end
+end
+
+VilinkasInsanityMark = {}
+
+function VilinkasInsanityMark:SetOffset(offset)
+	if offset > 1 then
+		offset = 1
+	elseif offset < 0 then
+		offset = 0
+	end
+
+	local parent = self:GetParent()
+	local parentWidth = parent:GetWidth()
+	local markHalfWidth = self:GetWidth() / 2
+
+	self:ClearAllPoints()
+	self:SetPoint("TOPLEFT", parent, "TOPLEFT", parentWidth * offset - markHalfWidth, 0)
+	self:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -parentWidth * (1 - offset) + markHalfWidth, 0)
 end
 
 VilinkasInsanityExtraFrame = {}
@@ -410,7 +429,7 @@ end
 function VilinkasInsanityExtraFrame:UpdateSettings(height, active)
 	self.height = height
 	self.active = active
-	if (self.active) then
+	if (not self.active) then
 		self:Hide()
 	end
 end
@@ -488,6 +507,7 @@ function VilinkasInsanityMana:OnLoad()
 	self.powerType = Enum.PowerType.Mana
 	self.powerToken = "MANA"
 	self.visiblityThreshold = 1
+	self.baseAttackSpeed = 1.5
 
 	self:SetMinMaxValues(0, 1)
 end
@@ -543,22 +563,354 @@ function VilinkasInsanityMana:UpdateSettings(newSettings)
 	self:Initialize(manaSettings.threshold)
 end
 
-VilinkasInsanityMark = {}
+VilinkasInsanityShadowfiend = {}
 
-function VilinkasInsanityMark:SetOffset(offset)
-	if offset > 1 then
-		offset = 1
-	elseif offset < 0 then
-		offset = 0
+function VilinkasInsanityShadowfiend:OnLoad()
+	VilinkasInsanityExtraFrame.OnLoad(self)
+	VilinkasInsnaityGenerator.OnLoad(self)
+
+	self.lastUpdateTime = 0
+
+	self.shadowfiendId = 254232
+	self.mindbenderTalentActive = false
+	self.mindbenderId = 200174
+
+	self.haveTotem = false
+	self.guid = nil
+	self.expirationTime = 0
+	self.duration = 0
+	self.lastAttackTime = 0
+	self.baseAttackSpeed = 1.5
+
+	self:SetMinMaxValues(0, 1)
+end
+
+local function VilinkasInsanityShadowfiend_OnUpdate(self)
+	local currTime = GetTime();
+	local timeLeft = self.expirationTime - currTime
+
+	if (not self.haveTotem) or (timeLeft <= 0) then
+		self.haveTotem = false
+		self:Hide()
+		self.insanityGain = 0
+		return;
 	end
 
-	local parent = self:GetParent()
-	local parentWidth = parent:GetWidth()
-	local markHalfWidth = self.halfWidth
+	local pct = (self.expirationTime - currTime) / self.duration
 
-	self:ClearAllPoints()
-	self:SetPoint("TOPLEFT", parent, "TOPLEFT", parentWidth * offset - markHalfWidth, 0)
-	self:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -parentWidth * (1 - offset) + markHalfWidth, 0)
+	if (self.deplete) then
+		self:SetValue(pct)
+	else
+		self:SetValue(1 - pct)
+	end
+
+	local elapsed = currTime - self.lastUpdateTime
+
+	if (elapsed > 0.1) then
+		-- Do stuff we dont need every frame
+		self.lastUpdateTime = currTime
+
+		self.TimeLeftText:SetText(format("%.1f", timeLeft))
+
+		local attacksSpeed = self.baseAttackSpeed / (1 + (player.haste / 100))
+		local predictedTimeNextAttack = self.lastAttackTime + attacksSpeed
+		
+		if (predictedTimeNextAttack - currTime) < -0.5 then
+			-- Remove attack mark
+			self.NextAttackMark:Hide()
+			self.insanityGain = 0
+		else
+			-- Continue as normal
+			local nextAttackPtc = (self.expirationTime - predictedTimeNextAttack) / self.duration
+
+			if (self.deplete) then
+				self.NextAttackMark:SetOffset(nextAttackPtc)
+			else
+				self.NextAttackMark:SetOffset(1 - nextAttackPtc)
+			end
+
+			self.NextAttackMark:Show()
+
+			if talents.mbender.active then
+				self.insanityGain = talents.mbender.igain
+			else
+				self.insanityGain = sfiend.igain
+			end
+		end
+	end
+end
+
+function VilinkasInsanityShadowfiend:Setup(active)
+	self.active = active
+	if (self.active) then
+		self:RegisterEvent("PLAYER_ENTERING_WORLD")
+		self:RegisterEvent("PLAYER_TALENT_UPDATE")
+		self:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+		self:SetScript("OnUpdate", VilinkasInsanityShadowfiend_OnUpdate)
+		self:UpdateTalents()
+	else
+		self:UnregisterEvent("PLAYER_ENTERING_WORLD")
+		self:UnregisterEvent("PLAYER_TALENT_UPDATE")
+		self:UnregisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+		self:SetScript("OnUpdate", nil)
+	end
+
+	self:Hide()
+end
+
+function VilinkasInsanityShadowfiend:OnEvent(event, ...)
+	if (event == "PLAYER_ENTERING_WORLD") then
+		self:Activate()
+		self.playerGuid = UnitGUID("player")
+	elseif (event == "PLAYER_TALENT_UPDATE") then
+		self:UpdateTalents()
+	elseif (event == "COMBAT_LOG_EVENT_UNFILTERED") then
+		local _, logEvent, _, sourceGUID, _, _, _, destGUID, _, _, _, spellId, spellName = CombatLogGetCurrentEventInfo()
+		if (sourceGUID == self.playerGuid) then
+			if (spellId == sfiend.id) or (spellId == talents.mbender.id) then
+				if logEvent == "SPELL_SUMMON" then
+					self:Activate()
+					self.guid = destGUID
+				end
+			elseif (logEvent == "UNIT_DIED") then
+				self:Activate()
+			end
+		elseif (sourceGUID == self.guid) then
+			if (logEvent == "SWING_DAMAGE") then
+				self.lastAttackTime = GetTime()
+			end
+		-- Power Leech (Mindbender Power Leech spell (200010))
+		elseif (destGUID == self.playerGuid) then
+			if (logEvent == "SPELL_ENERGIZE") then
+				if (spellId == sfiend.idLeech) or (spellId == talents.mbender.idLeech) then
+					self.lastAttackTime = GetTime()
+					self.guid = sourceGUID
+				end
+			elseif (event == "UNIT_DIED") then
+				self:Activate()
+			end
+		elseif (destGUID == self.guid) then
+			if (logEvent == "UNIT_DIED") then
+				self:Activate()
+			end
+		end
+	end
+end
+
+function VilinkasInsanityShadowfiend:UpdateTalents()
+	talents.mbender.active = select(4, GetTalentInfo(talents.mbender.tier, talents.mbender.column, 1))
+end
+
+function VilinkasInsanityShadowfiend:Activate()
+	local haveTotem, _, startTime, duration = GetTotemInfo(1)
+	self.haveTotem = haveTotem
+	if (self.haveTotem) then
+		self.duration = duration
+		self.expirationTime = startTime + duration
+		self.guid = nil
+		self:Show()
+	end
+end
+
+function VilinkasInsanityShadowfiend:UpdateSettings(newSettings)
+	local sfSettings = newSettings.bars.shadowfiend
+	local height = sfSettings.height
+	local active = sfSettings.enable
+	VilinkasInsanityExtraFrame.UpdateSettings(self, height, active)
+
+	self:Setup(active)
+
+	self.deplete = sfSettings.deplete
+
+	if sfSettings.background.enable then
+		self:SetBackdrop({
+			bgFile = LSM:Fetch("background", sfSettings.background.texture),
+			tile = true,
+			tileSize=self:GetWidth(),
+		})
+		self:SetBackdropColor(unpack(sfSettings.background.color))
+	else
+		self:SetBackdrop(nil)
+	end
+
+	local bartex
+	if newSettings.bars.useMainTexture then
+		bartex = LSM:Fetch("statusbar", newSettings.bars.main.texture)
+	else
+		bartex = LSM:Fetch("statusbar", sfSettings.texture)
+	end
+	self:SetStatusBarTexture(bartex)
+	self:SetStatusBarColor(unpack(sfSettings.color))
+
+	if sfSettings.nextattack.enable then
+		self.NextAttackMark.Texture:SetVertexColor(unpack(sfSettings.nextattack.color))
+		self.NextAttackMark:SetWidth(sfSettings.nextattack.thickness)
+		self.NextAttackMark.Texture:Show()
+	else
+		self.NextAttackMark.Texture:Hide()
+	end
+
+	local sfTextSettings = newSettings.text.shadowfiend
+
+	local file, flag
+	if newSettings.text.useMainText then
+		file = LSM:Fetch("font",  newSettings.text.file)
+		flag =  newSettings.text.flag
+	else
+		file = LSM:Fetch("font",  sfTextSettings.file)
+		flag =  sfTextSettings.flag
+	end
+	
+	self.TimeLeftText:SetFont(file, sfTextSettings.size, flag)
+
+	if (sfTextSettings.enable) then
+		self.TimeLeftText:Show()
+	else
+		self.TimeLeftText:Hide()
+	end
+end
+
+VilinkasInsanityAuspiciousSpiritsTracker = {}
+
+function VilinkasInsanityAuspiciousSpiritsTracker:OnLoad()
+	VilinkasInsnaityGenerator.OnLoad(self)
+
+	self.lastUpdateTime = 0
+	self.count = 0
+	self.targets = {}
+
+	self.iGain = 2
+end
+
+local function VilinkasInsanityAuspiciousSpiritsTracker_OnUpdate(self)
+	local currTime = GetTime()
+	local elapsed = currTime - self.lastUpdateTime
+
+	if (elapsed > 1) then
+		-- Do stuff we dont need every frame (Text, AS)
+		local targets = self.targets
+		for guid in pairs(targets) do
+			if targets[guid] ~= nil then
+				if (currTime - targets[guid].lastUpdateTime) > 10 then
+					self.count = self.count - targets[guid].count
+					targets[guid] = nil
+				end
+			end
+		end
+		if self.count < 0 then
+			self.count = 0
+		end
+		self.lastUpdateTime = currTime
+	end
+end
+
+function VilinkasInsanityAuspiciousSpiritsTracker:Setup(active)
+	self.active = active
+	if (self.active) then
+		self:RegisterEvent("PLAYER_ENTERING_WORLD")
+		self:RegisterEvent("PLAYER_TALENT_UPDATE")
+	end
+end
+
+function VilinkasInsanityAuspiciousSpiritsTracker:UpdateTalents()
+	if not (self.active) then
+		return;
+	end
+
+	local hasTalent = select(4, GetTalentInfo(talents.aspirits.tier, talents.aspirits.column, 1))
+	if (hasTalent) then
+		self:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+		self:SetScript("OnUpdate", VilinkasInsanityAuspiciousSpiritsTracker_OnUpdate)
+	else
+		self:UnregisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+		self:SetScript("OnUpdate", nil)
+		self:DestroyAll()
+	end
+end
+
+function VilinkasInsanityAuspiciousSpiritsTracker:OnEvent(event)
+	if (event == "PLAYER_ENTERING_WORLD") then
+		self:DestroyAll()
+		self.playerGuid = UnitGUID("player")
+	elseif (event == "PLAYER_TALENT_UPDATE") then
+		self:UpdateTalents()
+	elseif (event == "COMBAT_LOG_EVENT_UNFILTERED") then
+		local _, event, _, sourceGUID, _, _, _, destGUID, _, _, _, spellId = CombatLogGetCurrentEventInfo()
+		if (sourceGUID == self.playerGuid) and (self.active) then
+			if (spellId == 147193) then
+				if event == "SPELL_CAST_SUCCESS" then
+					self:OnSpawn(destGUID)
+				end
+			elseif (spellId == 148859) then
+				if event == "SPELL_DAMAGE" or event == "SPELL_MISSED" then
+					self:OnDespawn(destGUID)
+				end
+			elseif (event == "UNIT_DIED") then
+				print("UNIT_DIED: Source is player")
+			end
+		end
+		if (event == "UNIT_DIED") then
+			if (destGUID == self.playerGuid) then
+				self:DestroyAll()
+			elseif (self.targets[destGUID]) then
+				local count = self.targets[destGUID].count
+				if count > 0 then
+					self.count = self.count - count
+				end
+				self.targets[destGUID] = nil
+			end
+		end
+	end
+end
+
+function VilinkasInsanityAuspiciousSpiritsTracker:DestroyAll()
+	self.count = 0
+	self.targets = {}
+end
+
+function VilinkasInsanityAuspiciousSpiritsTracker:OnSpawn(guid)
+	targets = self.targets
+	if not targets[guid] then
+		targets[guid] = { count = 0 }
+	end
+	targets[guid].count = targets[guid].count + 1
+	targets[guid].lastUpdateTime = GetTime()
+	self.count = self.count + 1
+end
+
+function VilinkasInsanityAuspiciousSpiritsTracker:OnDespawn(guid)
+	targets = self.targets
+	if targets[guid] then
+		targets[guid].asCount = targets[guid].count - 1
+		if targets[guid].count <= 0 then
+			targets[guid] = nil
+		else
+			targets[guid].lastUpdateTime = GetTime()
+		end
+		self.count = self.count - 1
+		if self.count < 0 then
+			self.count = 0
+		end
+	end
+end
+
+function VilinkasInsanityAuspiciousSpiritsTracker:GetInsanityGain()
+	self.insanityGain = self.count * self.iGain
+	return VilinkasInsnaityGenerator.GetInsanityGain(self)
+end
+
+VilinkasInsnaityGenerator = {}
+
+function VilinkasInsnaityGenerator:OnLoad()
+	self.insanityGain = 0
+end
+
+function VilinkasInsnaityGenerator:GetInsanityGain()
+	local mul = 1
+	if (false) then
+		mul = 2
+	end
+	return self.insanityGain * mul
 end
 
 VilinkasInsnaity = {}
@@ -703,15 +1055,6 @@ function VilinkasInsnaity:UpdatePlayerState()
 		self:SetAlpha(oocAlpha)
 	end
 
-	-- Check for shadow fiend
-	local haveTotem, _, startTime, duration = GetTotemInfo(1)
-	if haveTotem then
-		sfiend.duration = duration
-		sfiend.startTime = startTime
-		sfiend.active = true
-		frames.sfiendBar:Show()
-	end
-
 	-- Check for auras
 	auras.vform.active, auras.vform.stacks = GetPlayerBuffInfo(auras.vform.id)
 	auras.vtorrent.active = GetPlayerBuffInfo(auras.vtorrent.id)
@@ -722,75 +1065,6 @@ function VilinkasInsnaity:UpdatePlayerState()
 	
 	self:UpdateMaxPower()
 	self:UpdatePower()
-end
-
-local updateASRate, lastUpdateASTime = 1, 0
-local function UpdateAS(currentTime)
-	local aspirits = talents.aspirits
-	if aspirits.active then
-		local dt = currentTime - lastUpdateASTime
-		if dt > updateASRate and aspirits.active then
-			local targets = aspirits.targets
-			for guid in pairs(targets) do
-				if targets[guid] ~= nil then
-					if (currentTime - targets[guid].lastUpdateTime) > 10 then
-						aspirits.count = aspirits.count - targets[guid].asCount
-						targets[guid] = nil
-					end
-				end
-			end
-			if aspirits.count < 0 then
-				aspirits.count = 0
-			end
-		end
-		local igain = aspirits.count * aspirits.igain
-		player.passiveInsanityGain = player.passiveInsanityGain + igain
-	end
-end
-
-local function UpdateSF(currentTime)
-	if sfiend.active and sfiend.enable then
-		--local timeLeft = sfiend.duration - (currentTime - sfiend.startTime)
-		local timeLeft = sfiend.expirationTime - currentTime
-		local bar = frames.sfiendBar
-		if not (timeLeft > 0) then
-			sfiend.active = false
-			bar:Hide()
-		else
-			local attacksSpeed = sfiend.baseAttackSpeed / (1 + (player.haste / 100))
-			local predictedTimeNextAttack = sfiend.lastAttackTime + attacksSpeed
-			local pct = (sfiend.expirationTime - currentTime) / sfiend.duration
-			local deplete = bar.deplete
-			if deplete then
-				bar:SetValue(pct)
-			else
-				bar:SetValue(1 - pct)
-			end
-			if (predictedTimeNextAttack - currentTime) < -0.5 then
-				-- Remove attack mark
-				bar.attackMark:Hide()
-			else
-				-- Continue as normal
-				local nextAttackPtc = (sfiend.expirationTime - predictedTimeNextAttack) / sfiend.duration
-
-				if deplete then
-					bar.attackMark:SetOffset(nextAttackPtc)
-					--UpdateMark(bar.attackMark, nextAttackPtc)
-				else
-					--UpdateMark(bar.attackMark, 1 - nextAttackPtc)
-					bar.attackMark:SetOffset(1 - nextAttackPtc)
-				end
-
-				frames.sfiendBar.attackMark:Show()
-
-				if talents.mbender.active then
-					player.passiveInsanityGain = player.passiveInsanityGain + talents.mbender.igain
-				else
-					player.passiveInsanityGain = player.passiveInsanityGain +  sfiend.igain
-				end
-			end
-		end
-	end
 end
 
 local function UpdateText(currentTime)
@@ -812,88 +1086,14 @@ local function UpdateText(currentTime)
 	end
 end
 
-local function StartGcd(spellId)
-	local start, duration = GetSpellCooldown(spellId)
-	if start > 0 and gcd.enable then
-		gcd.start = start
-		gcd.duration = duration
-		frames.gcdBar:Show()
-	end
-end
-
-local function UpdateGCD(currentTime)
-	if gcd.start > 0 then
-		local netTime = 0--select(4, GetNetStats()) / 1000)
-		local pct = (currentTime - gcd.start - netTime) / gcd.duration
-		local gcdBar = frames.gcdBar
-		if pct > 1 then
-			gcdBar:SetValue(0)
-			gcdBar:Hide()
-			gcd.start = 0
-        else
-			if gcdBar.deplete then
-				gcdBar:SetValue(1-pct)
-			else
-				gcdBar:SetValue(pct)
-			end
-		end
-	end
-end
-
-local function UpdateSTM(currentTime)
-	local stmDebuffTimeLeft = stmDebuffExpirationTime - currentTime
-	if stmDebuffTimeLeft < 0 then
-		frames.stmBorder:Hide()
-		frames.stmBar:Hide()
-		auras.stmdebuff.active = false
-	else
-		local pct = stmDebuffTimeLeft / stmDebuffDuration
-		local deplete = frames.stmBar.deplete
-		if deplete then
-			frames.stmBar:SetValue(1 - pct)
-		else
-			frames.stmBar:SetValue(pct)
-		end
-	end
-end
-
-local function OnUpdate()
-	local currentTime = GetTime()
-	local elapsed = currentTime - self.lastUpdateTime
-	
-	if dt > updateRate then
-		UpdateAS(currentTime)
-		--UpdateSF(currentTime)
-
-		local stmbuff = auras.stmbuff
-		if stmbuff.active then
-			local imul = stmbuff.imul
-			player.passiveInsanityGain = player.passiveInsanityGain * imul
-		elseif auras.stmdebuff.active then
-			player.currentCastInsanityGain = 0
-			player.passiveInsanityGain = 0
-		end
-
-		UpdateText(currentTime)
-		UpdateInsanityBar()
-
-		--UpdateManaBar()
-		--UpdateSTM(currentTime)
-
-		player.passiveInsanityGain = 0
-		lastUpdateTime = currentTime
-	end
-	UpdateGCD(currentTime)
-end
-
 VilinkasInsnaity.ExtraBars = {}
 
 function VilinkasInsnaity:OnLoad()
-	self.class = "PRIEST";
-	self.spec = SPEC_PRIEST_SHADOW;
 	self.powerType = Enum.PowerType.Insanity
-	self.powerToke = "INSANITY"
+	self.powerToken = "INSANITY"
 	self.lastUpdateTime = 0
+
+	self.castGain = 0
 
 	self.NormalBorderFrame = self.BorderFrame.NormalBorderFrame
 	self.AnimatedBorderFrame = self.BorderFrame.AnimatedBorderFrame
@@ -919,22 +1119,28 @@ end
 local function VilinkasInsnaity_OnUpdate(self)
 	local currTime = GetTime()
 	local elapsed = currTime - self.lastUpdateTime
-	self.lastUpdateTime = currTime
 
-	--self:UpdateDockSize("TOP_INSIDE")
-	--[[for k,v in pairs(self.ExtraBars) do
-		print(k)
-	end]]--
+	if (elapsed > 0.1) then
+		-- Do stuff we dont need every frame (Text)
+
+		local castGain = self.castGain
+
+		local passiveGain = self.ShadowfiendBar:GetInsanityGain()
+		passiveGain = passiveGain + self.AuspiciousSpiritsTracker:GetInsanityGain()
+
+		local castGainText = castGain > 0 and "|c" .. castHexColor .. castGain .. "|r + " or ""
+		local passiveGainText = passiveGain > 0 and "|c" .. asHexColor .. passiveGain .. "|r + " or ""
+		self.RightText:SetText(castGainText .. passiveGainText .. self:GetValue())
+
+		self.lastUpdateTime = currTime
+	end
 end
 
 function VilinkasInsnaity:Setup()
-	local show = false
-	local _, class = UnitClass("player");
-	if class == self.class then
-		local spec = GetSpecialization()
-		if spec == self.spec then
-			show = true
-			self.powerType = Enum.PowerType.Insanity
+	local active = false
+	if IsPriest() then
+		if IsShadow() then
+			active = true
 			self:RegisterEvent("PLAYER_ENTERING_WORLD")
 			self:RegisterEvent("PLAYER_TALENT_UPDATE")
 			self:RegisterEvent("PLAYER_REGEN_ENABLED")
@@ -978,7 +1184,10 @@ function VilinkasInsnaity:Setup()
 		
 		self:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED")
 	end
-	self:SetShown(show)
+	self:SetShown(active)
+
+	self.ShadowfiendBar:Setup(active)
+	self.AuspiciousSpiritsTracker:Setup(active)
 end
 
 function VilinkasInsnaity:UpdateAuras()
@@ -1013,8 +1222,6 @@ function VilinkasInsnaity:OnEvent(event, ...)
 		if GetSpecialization() == player.shadowSpec then
 			talents.lotvoid.active = select(4, GetTalentInfo(talents.lotvoid.tier, talents.lotvoid.column, 1))
 			talents.fotmind.active = select(4, GetTalentInfo(talents.fotmind.tier, talents.fotmind.column, 1))
-			talents.mbender.active = select(4, GetTalentInfo(talents.mbender.tier, talents.mbender.column, 1))
-			talents.aspirits.active = select(4, GetTalentInfo(talents.aspirits.tier, talents.aspirits.column, 1))
 			if not talents.aspirits.active then
 				talents.aspirits.targets = {}
 				talents.aspirits.count = 0
@@ -1038,14 +1245,12 @@ function VilinkasInsnaity:OnEvent(event, ...)
 		local _, _, spellId = ...
 		local castGain = spellInsanityGain[spellId]()
 		player.predictedCastPowerGain = castGain
+		self.castGain = castGain
 		if not player.inCombat and castGain > 0 then
 			self.FadeoutAnim:Stop()
 			self:SetAlpha(1)
 		end
-		--self:UpdatePower()
 		self.CastGainBar:SetValue(castGain)
-		--self.BuilderFrame:SetCastValue(castGain)
-		--StartGcd(spellId)
 		self.GcdBar:StartGcd(spellId)
 	elseif (event == "UNIT_SPELLCAST_SUCCEEDED") then
 		local _, _, spellId = ...
@@ -1060,10 +1265,9 @@ function VilinkasInsnaity:OnEvent(event, ...)
 		if not player.inCombat and player.predictedCastPowerGain > 0 then
 			self.FadeoutAnim:Play()
 		end
+		self.castGain = 0
 		player.predictedCastPowerGain = 0
 		self.CastGainBar:SetValue(0)
-		--self.BuilderFrame:SetCastValue(0)
-		--self:UpdatePower()
 	elseif (event == "ENCOUNTER_START") then
 			local _, encounterName = ...
 			reports.encounterName = encounterName
@@ -1105,41 +1309,6 @@ function VilinkasInsnaity:OnEvent(event, ...)
 				elseif logEvent == "SPELL_AURA_REMOVED" then
 					auras.stmbuff.active = false
 				end
-			-- Auspicious Spirits Spawn --
-			elseif spellId == talents.aspirits.idSpawn then
-				if logEvent == "SPELL_CAST_SUCCESS" then
-					local aspirits = talents.aspirits
-					if aspirits.active then
-						targets = aspirits.targets
-						if not targets[destGUID] then
-							targets[destGUID] = {}
-							targets[destGUID].asCount = 0
-							targets[destGUID].asSpawnTime = {}
-						end
-						targets[destGUID].asCount = targets[destGUID].asCount + 1
-						targets[destGUID].lastUpdateTime = GetTime()
-						aspirits.count = aspirits.count + 1
-					end
-				end
-			-- Auspicious Spirits Despawn --
-			elseif spellId == talents.aspirits.idDespawn then
-				if logEvent == "SPELL_DAMAGE" or event == "SPELL_MISSED" then
-					local aspirits = talents.aspirits
-					if talents.aspirits.active then
-						targets = aspirits.targets
-						if targets[destGUID] then
-							targets[destGUID].asCount = targets[destGUID].asCount - 1
-							targets[destGUID].lastUpdateTime = GetTime()
-							aspirits.count = aspirits.count - 1
-							if targets[destGUID].asCount <= 0 then
-								targets[destGUID] = nil
-							end
-							if aspirits.count < 0 then
-								aspirits.count = 0
-							end
-						end
-					end
-				end
 			-- Void Torrent --
 			elseif spellId == auras.vtorrent.id then
 				if logEvent == "SPELL_AURA_APPLIED" then
@@ -1147,48 +1316,18 @@ function VilinkasInsnaity:OnEvent(event, ...)
 				elseif logEvent == "SPELL_AURA_REMOVED" then
 					auras.vtorrent.active = false
 				end
-			-- Shadow fiend / Mindbender --
-			elseif spellId == sfiend.id or spellId == talents.mbender.id then
-				if logEvent == "SPELL_SUMMON" then
-					sfiend.guid = destGUID
-					local _, _, startTime, duration = GetTotemInfo(1)
-					sfiend.duration = duration
-					sfiend.expirationTime = startTime + duration
-					sfiend.active = true
-					frames.sfiendBar:Show()
-				end
 			end
-		elseif sourceGUID == sfiend.guid and logEvent == "SWING_DAMAGE" then
-			sfiend.lastAttackTime = GetTime()
-		-- Power Leech (Mindbender Power Leech spell (200010))
-		elseif destGUID == UnitGUID("player") and 
-			spellId == sfiend.idLeech or spellId == talents.mbender.idLeech and
-			logEvent == "SPELL_ENERGIZE" then
-			sfiend.lastAttackTime = GetTime()
-			sfiend.guid = sourceGUID
 		end
 		if logEvent == "UNIT_DIED" then
 			if destGUID == UnitGUID("player") then
 				if auras.vform.stacks > 0 then
 					FinaliseVfRep()
 				end
-				talents.aspirits.targets = {}
 				auras.vform.currentStackTime = 0
 				auras.vform.drainStacks = 0
 				auras.vform.stacks = 0
 				auras.stmbuff.active = false
 				auras.vtorrent.active = false
-				sfiend.active = false
-			elseif destGUID == sfiend.guid then
-				sfiend.active = false
-				frames.sfiendBar:Hide()
-			elseif talents.aspirits.targets[destGUID] then
-				local count = targets[destGUID].asCount
-				local aspirits = talents.aspirits
-				if count > 0 then
-					aspirits.count = aspirits.count - count
-				end
-				aspirits.targets[destGUID] = nil
 			end
 		end
 	end
@@ -1214,6 +1353,7 @@ function VilinkasInsnaity:ExtraBarOnSizeChanged(extraBar)
 			self.BackgroundFrame:SetOffset(newOffset, "TOP")
 		end
 	elseif dock == "BOTTOM_OUTSIDE" then
+		local borderFrame = self.BorderFrame
 		if extraBar:IsVisible() then
 			borderFrame:SetOffset(borderFrame:GetOffset("BOTTOM") + extraBar.height, "BOTTOM")
 		else
@@ -1289,31 +1429,6 @@ local function RGBAToHex(rgba)
 	return hexadecimal
 end
 
-local topOffsetStack, bottomOffsetStack
-local function AddBarToStack(bar, pos)
-	local t = db.border.thickness
-	bar:ClearAllPoints()
-	if pos == "TOP" then
-		if topOffsetStack then
-			bar:SetPoint("BOTTOMLEFT", topOffsetStack, "TOPLEFT", 0, 0)
-			bar:SetPoint("BOTTOMRIGHT", topOffsetStack, "TOPRIGHT", 0, 0)
-		else
-			bar:SetPoint("BOTTOMLEFT", frames.bg, "TOPLEFT", 0, t)
-			bar:SetPoint("BOTTOMRIGHT", frames.bg, "TOPRIGHT", 0, t)
-		end
-		topOffsetStack = bar
-	else
-		if bottomOffsetStack then
-			bar:SetPoint("TOPLEFT", bottomOffsetStack, "BOTTOMLEFT", 0, 0)
-			bar:SetPoint("TOPRIGHT", bottomOffsetStack, "BOTTOMRIGHT", 0, 0)
-		else
-			bar:SetPoint("TOPLEFT", frames.bg, "BOTTOMLEFT", 0, -t)
-			bar:SetPoint("TOPRIGHT", frames.bg, "BOTTOMRIGHT", 0, -t)
-		end
-		bottomOffsetStack = bar
-	end
-end
-
 local default
 function VilinkasInsnaity:UpdateSettings()
     if not db then
@@ -1369,8 +1484,10 @@ function VilinkasInsnaity:UpdateSettings()
 						texture = "Blizzard Raid Bar",
 						voidformthreshold = {
 							enable = true,
+							override = 60,
 							color = { 1, 1, 1, 1 },
 							thickness = 2,
+							hideinvoidfrom = true,
 						}
 					},
 					gcd = {
@@ -1399,12 +1516,13 @@ function VilinkasInsnaity:UpdateSettings()
 					},
 					shadowfiend = {
 						enable = true,
-						color = { 1, 1, 1, 1 },
+						color = { 1, 0.31, 0.85, 1 },
 						texture = "Blizzard Raid Bar",
-						height = 5.0,
+						height = 10.0,
+						deplete = true,
 						background = {
 							enable = true,
-							color = { 0.2, 0.2, 0.2, 0.5 },
+							color = { 0.15, 0.15, 0.15, 1 },
 							texture = "Solid",
 						},
 						nextattack = {
@@ -1413,73 +1531,76 @@ function VilinkasInsnaity:UpdateSettings()
 							thickness = 1,
 						}
 					},
-                    texture = "Blizzard Raid Bar",
-                    insbarcolor = { 0.4, 0, 0.8, 1 },
-                    castbarcolor = { 1, 1, 1, 1 },
-                    asbarcolor = { 1, 0.31, 0.85, 1 },
-                },
-                overlay = {
-                    thickness = 1,
-                    color = { 1, 1, 1, 1 },
                 },
                 text = {
-                    file = "Friz Quadrata TT",
-                    flag = "OUTLINE",
-                    insanitycolor = { 1, 1, 1, 1 },
-                    insanitysize = 12,
-                    castcolor = { 1, 1, 1, 1 },
-                    ascolor = { 1, 0.31, 0.85, 1 },
-                    vfstackcolor = { 1, 1, 1, 1 },
-                    vfstacksize = 12,
-                    vftimecolor = { 1, 1, 1, 1 },
-                    vftimesize = 12,
-                },
+					useMainText = true,
+					main = {
+						file = "Friz Quadrata TT",
+						flag = "OUTLINE",
+						right = {
+							enable = true,
+							file = "Friz Quadrata TT",
+							flag = "OUTLINE",
+							size = 12,
+							colorinsanity = { 1, 1, 1, 1 },
+							colorcast = { 1, 1, 1, 1 },
+							colorpassive = { 1, 0.31, 0.85, 1 },
+							offset = {
+								right = -2,
+								top = 0,
+							}
+						},
+						center = {
+							enable = true,
+							file = "Friz Quadrata TT",
+							flag = "OUTLINE",
+							size = 12,
+							color = { 1, 1, 1, 1 },
+							offset = {
+								right = 0,
+								top = 0,
+							}
+						},
+						left = {
+							enable = true,
+							file = "Friz Quadrata TT",
+							flag = "OUTLINE",
+							size = 12,
+							color = { 1, 1, 1, 1 },
+							offset = {
+								left = -2,
+								top = 0,
+							}
+						},
+					},
+					shadowfiend = {
+						enable = true,
+						file = "Friz Quadrata TT",
+						flag = "OUTLINE",
+						size = 12,
+						color = { 1, 1, 1, 1 },
+						offset = {
+							right = -2,
+							top = 0,
+						}
+					},
+				},
+				animations = {
+					ooc = {
+						duration = 0.5,
+						startdelay = 1,
+					},
+					animatedborder = {
+						pulseduration = 1,
+					},
+				},
                 misc = {
-                    voidformthreshold = 60,
-                    lingeringinsanity = true,
-                    vfdisreportingenabled = 2,
-                    vfsavereportingenabled = 2,
-					vfreportingmaxsaved = 3,
-					borderstmdebuffcolor = { 1.0, 0.0, 0.0, 1.0 }
+					voidfromreports = {
+						enable = 2,
+						save = 2,
+						maxsaved = 3,
+					}
                 },
-                animations = {
-                    oocduration = 0.5,
-                    oocstartdelay = 1,
-                    bordercolor = { 0.7, 0.0, 1.0, 1.0 },
-                    borderduration = 1,
-                },
-                gcd = {
-                    enable = true,
-                    pos = "TOP",
-                    height = 5.0,
-                    barcolor = { 1, 1, 1, 1 },
-                    deplete = false,
-				},
-				sfiend = {
-					enable = true,
-					pos = "BOTTOM",
-					height = 10,
-					barcolor = { 1, 0.31, 0.85, 1 },
-					deplete = true,
-					markthickness = 1,
-                    markcolor = { 1, 1, 1, 1 },
-				},
-				manabar = {
-					enable = false,
-					pos = "BOTTOM",
-					height = 5.0,
-					barcolor = { 0, 0, 1, 1 },
-					deplete = true,
-					markthickness = 1,
-					markcolor = { 1, 1, 1, 1 },
-				},
-				stmdebuff = {
-					enable = true,
-					bordercolor = { 1, 0, 0, 1 },
-					height = 5,
-					barcolor = { 1, 0, 0, 0.5 },
-					deplete = true,
-				},
                 vfreportarchive = {
                 },
             },
@@ -1545,11 +1666,11 @@ function VilinkasInsnaity:UpdateSettings()
 	self.PassiveGainBar.tex:SetVertexColor(unpack(db.bars.main.passivecolor))
 
 	-- Voidform Threshold Mark --
-	auras.vform.thresholdOverride = db.misc.voidformthreshold
+	auras.vform.thresholdOverride = db.bars.main.voidformthreshold.override
+	auras.vform.thresholdHideInVoidform = db.bars.main.voidformthreshold.hideinvoidfrom
 	if auras.vform.thresholdOverride < 100 and db.bars.main.voidformthreshold.enable then
-		--self.VoidformTreshold:ClearAllPoints()
-		--self.VoidformTreshold:SetWidth(db.bars.main.voidformthreshold.thickness)
-		self.VoidformTreshold.halfWidth = db.bars.main.voidformthreshold.thickness / 2
+		self.VoidformTreshold:ClearAllPoints()
+		self.VoidformTreshold:SetWidth(db.bars.main.voidformthreshold.thickness)
 		self.VoidformTreshold.Texture:SetVertexColor(unpack(db.bars.main.voidformthreshold.color))
 		self.VoidformTreshold:Show()
 	else
@@ -1563,80 +1684,62 @@ function VilinkasInsnaity:UpdateSettings()
 	-- Mana bar --
 	self.ManaBar:UpdateSettings(db)
 
+	-- Shadowfined bar --
+	self.ShadowfiendBar:UpdateSettings(db)
+
 	-- Extra bar docking --
 	self:ClearDocks()
 	self:AddExtraBar(self.GcdBar, "TOP_INSIDE")
 	self:AddExtraBar(self.ManaBar, "BOTTOM_INSIDE")
+	self:AddExtraBar(self.ShadowfiendBar, "BOTTOM_OUTSIDE")
 	
 	-- Font --
-	local file = LSM:Fetch("font", db.text.file)
-	local flag = db.text.flag
-	self.RightText:SetFont(file, db.text.insanitysize, flag)
-	self.RightText:SetTextColor(unpack(db.text.insanitycolor))
-	self.LeftText:SetFont(file, db.text.vftimesize, flag)
-	self.LeftText:SetTextColor(unpack(db.text.vftimecolor))
-	self.CenterText:SetFont(file, db.text.vfstacksize, flag)
-	self.CenterText:SetTextColor(unpack(db.text.vfstackcolor))
-	castHexColor, asHexColor = RGBAToHex(db.text.castcolor), RGBAToHex(db.text.ascolor)
+	local rightTextFile, rightTextflag
+	if (db.text.useMainText) then
+		rightTextFile = LSM:Fetch("font", db.text.main.file)
+		rightTextflag = db.text.main.flag
+	else
+		rightTextFile = LSM:Fetch("font", db.text.main.right.file)
+		rightTextflag = db.text.main.right.flag
+	end
+	self.RightText:SetFont(rightTextFile, db.text.main.right.size, rightTextflag)
+	self.RightText:SetTextColor(unpack(db.text.main.right.colorinsanity))
+	castHexColor, asHexColor = RGBAToHex(db.text.main.right.colorcast), RGBAToHex(db.text.main.right.colorpassive)
+
+	local leftTextFile, leftTextflag
+	if (db.text.useMainText) then
+		leftTextFile = LSM:Fetch("font", db.text.main.file)
+		leftTextflag = db.text.main.flag
+	else
+		leftTextFile = LSM:Fetch("font", db.text.main.left.file)
+		leftTextflag = db.text.main.left.flag
+	end
+	self.LeftText:SetFont(leftTextFile, db.text.main.left.size, leftTextflag)
+	self.LeftText:SetTextColor(unpack(db.text.main.left.color))
+
+	local centerTextFile, centerTextflag
+	if (db.text.useMainText) then
+		centerTextFile = LSM:Fetch("font", db.text.main.file)
+		centerTextflag = db.text.main.flag
+	else
+		centerTextFile = LSM:Fetch("font", db.text.main.left.file)
+		centerTextflag = db.text.main.left.flag
+	end
+	self.CenterText:SetFont(centerTextFile, db.text.main.center.size, centerTextflag)
+	self.CenterText:SetTextColor(unpack(db.text.main.center.color))
+
 	-- Animations --
-	self.FadeoutAnim.Alpha:SetDuration(db.animations.oocduration)
-	self.FadeoutAnim.Alpha:SetStartDelay(db.animations.oocstartdelay)
+	self.FadeoutAnim.Alpha:SetDuration(db.animations.ooc.duration)
+	self.FadeoutAnim.Alpha:SetStartDelay(db.animations.ooc.startdelay)
 	self.FadeoutAnim.Alpha:SetToAlpha(db.general.oocalpha)
-	--[[animations.fade.alpha:SetDuration(db.animations.oocduration)
-	animations.fade.alpha:SetStartDelay(db.animations.oocstartdelay)
-	animations.fade.alpha:SetToAlpha(db.general.alphaooc)]]--
-	--self.AnimatedBorderFrame:SetAlpha(0)
-	--[[self.AnimatedBorderFrame.PulseAnim.AlphaOut:SetToAlpha(db.general.border.animated.colorvf[4])
-	self.AnimatedBorderFrame.PulseAnim.AlphaOut:SetDuration(db.animations.borderduration / 2)
-	self.AnimatedBorderFrame.PulseAnim.AlphaIn:SetFromAlpha(db.general.border.animated.colorvf[4])
-	self.AnimatedBorderFrame.PulseAnim.AlphaIn:SetDuration(db.animations.borderduration / 2)
-	self.AnimatedBorderFrame.FadeoutAnim.Alpha:SetFromAlpha(db.general.border.animated.colorvf[4])]]--
-	--[[animations.vfReady.alphaIn:SetDuration(db.animations.borderduration / 2)
-	animations.vfReady.alphaOut:SetDuration(db.animations.borderduration / 2)]]--
+
 	-- Lingering Insanity --
-	auras.linsanity.display = db.misc.lingeringinsanity
+	auras.linsanity.display = true
+
 	-- STM reporting --
 	reports.display = db.misc.vfdisreportingenabled
 	reports.save = db.misc.vfsavereportingenabled
 	reports.maxSaved = db.misc.vfreportingmaxsaved
-	-- Mindbender --
-	--[[sfiend.enable = db.sfiend.enable
-	frames.sfiendBar.deplete = db.sfiend.deplete
-	frames.sfiendBar:ClearAllPoints()
-	--AddBarToStack(frames.sfiendBar, db.sfiend.pos)
-	frames.sfiendBar:SetStatusBarTexture(bartex)
-	frames.sfiendBar:SetStatusBarColor(db.sfiend.barcolor[1], db.sfiend.barcolor[2], db.sfiend.barcolor[3], 1)
-	frames.sfiendBar:SetValue(0)
-	frames.sfiendBar:SetHeight(db.sfiend.height)
-	frames.sfiendBar:SetScript("OnShow", function(self)
-		self:SetHeight(db.sfiend.height)
-	end)
-	frames.sfiendBar:SetScript("OnHide", function(self)
-		self:SetHeight(0.01)
-	end)
-	frames.sfiendBar:Hide()
-	frames.sfiendBar.tex:SetVertexColor(db.background.color[2], db.background.color[2], db.background.color[3], db.background.color[4])
-	frames.sfiendBar.attackMark:ClearAllPoints()
-	frames.sfiendBar.attackMark:SetWidth(db.sfiend.markthickness)
-	frames.sfiendBar.attackMark.tex:SetVertexColor(db.sfiend.markcolor[1], db.sfiend.markcolor[2], db.sfiend.markcolor[3], db.sfiend.markcolor[4])
-	--frames.sfiendBar.attackMark:Hide()
-	--sfiend.active = true
-	-- GCD --
-	gcd.enable = db.gcd.enable
-	frames.gcdBar.deplete = db.gcd.deplete
-	frames.gcdBar:ClearAllPoints()
-	--AddBarToStack(frames.gcdBar, db.gcd.pos)
-	frames.gcdBar:SetScript("OnShow", function(self)
-		self:SetHeight(db.gcd.height)
-	end)
-	frames.gcdBar:SetScript("OnHide", function(self)
-		self:SetHeight(0.01)
-	end)
-	frames.gcdBar:SetStatusBarTexture(bartex)
-	frames.gcdBar:SetStatusBarColor(db.gcd.barcolor[1], db.gcd.barcolor[2], db.gcd.barcolor[3], 1)
-	frames.gcdBar:SetValue(0)
-	frames.gcdBar.tex:SetVertexColor(db.background.color[2], db.background.color[2], db.background.color[3], db.background.color[4])
-	frames.gcdBar:Hide()]]--
 end
 
 SLASH_VilinkasInsanity1, SLASH_VilinkasInsanity2 = "/vilins", "/VilinkasInsanity"
