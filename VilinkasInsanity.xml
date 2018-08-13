@@ -90,8 +90,8 @@
 				</Scripts>
 			</Frame>
 
-			<StatusBar parentKey="CastGainBar" setAllPoints="true" useParentLevel="true" inherits="VilinkasInsnaityBuilderBar"/>
-			<StatusBar parentKey="PassiveGainBar" setAllPoints="true" useParentLevel="true" inherits="VilinkasInsnaityBuilderBar"/>
+			<StatusBar name="VilinkasInsanityCastGainBar" parentKey="CastGainBar" setAllPoints="true" useParentLevel="true" inherits="VilinkasInsnaityBuilderBar"/>
+			<StatusBar name="VilinkasInsanityPassiveGainBar" parentKey="PassiveGainBar" setAllPoints="true" useParentLevel="true" inherits="VilinkasInsnaityBuilderBar"/>
 			
 			<StatusBar name="VilinkasInsanityGcdBar" parentKey="GcdBar" hidden="true" useParentLevel="true" mixin="VilinkasInsanityGcd" inherits="VilinkasInsanityExtraFrameTemplate"/>
 			<StatusBar name="VilinkasInsanityManaBar" parentKey="ManaBar" hidden="true" useParentLevel="true" mixin="VilinkasInsanityMana" inherits="VilinkasInsanityExtraFrameTemplate"/>
@@ -113,7 +113,7 @@
 				</Scripts>
 			</StatusBar>
 
-			<Frame parentKey="VoidformTreshold" hidden="true" inherits="VilinkasInsanityMarkTemplate"/>
+			<Frame parentKey="VoidformTreshold" hidden="true" useParentLevel="true" inherits="VilinkasInsanityMarkTemplate" mixin="VilinkasInsanityVoidformThresholdMark"/>
         
 			<Frame parentKey="AuspiciousSpiritsTracker" mixin="VilinkasInsnaityGenerator, VilinkasInsanityAuspiciousSpiritsTracker">
 				<Scripts>
@@ -123,7 +123,7 @@
 			</Frame>
 		</Frames>
 		<Layers>
-			<Layer level="ARTWORK" textureSubLevel="2">
+			<Layer level="ARTWORK" textureSubLevel="10">
 				<FontString parentKey="LeftText">
 					<Anchors>
 						<Anchor point="LEFT" relativePoint="LEFT" x="2" y="0"/>

@@ -7,7 +7,7 @@ addon.optionsTable.args.bars = {
     type = "group",
     childGroups = "tab",
     name = "Bars",
-    order = 4,
+    order = 2,
     get = function(info) return db.bars[info[#info]] end,
     set = function(info, value) 
         db.bars[info[#info]] = value
@@ -17,7 +17,7 @@ addon.optionsTable.args.bars = {
         useMainTexture = {
             type = "toggle",
             name = "Use main bar texture for all bars.",
-            desc = "Enable background.",
+            desc = "Use main bar texture for all bars.",
             width = "full",
             order = 1,
         },
@@ -131,6 +131,25 @@ addon.optionsTable.args.bars = {
                             disabled = function() 
                                 return not db.bars.main.voidformthreshold.enable
                             end,
+                        },
+                        override = {
+                            type = "range",
+                            name = "Override",
+                            desc = "Override mark position.",
+                            order = 4,
+                            min = 60,
+                            softMax = 100,
+                            step = 1,
+                            disabled = function() 
+                                return not db.bars.main.voidformthreshold.enable
+                            end,
+                        },
+                        hideinvoidfrom = {
+                            type = "toggle",
+                            name = "Hide in voidform",
+                            desc = "Hide mark when in voidform.",
+                            width = "full",
+                            order = 5,
                         },
                     },
                 },

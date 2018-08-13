@@ -23,7 +23,8 @@ local player = {
 local auras = {
 	vform = {id=194249, active=false, duration=0, expirationTime=0, 
 		stacks=0, currentStackTime=0, drainStacks=0, drainMod=1,
-		baseThreshold=90, thresholdOverride=0, threshold=0},
+		baseThreshold=90, thresholdOverride=0, threshold=0, 
+		thresholdShow = true, thresholdHideInVoidform=true },
 	vtorrent = {id=263165, active=false},
 	stmbuff = {id=193223, active=false, imul=2},
 	stmdebuff = {id=263406, active=false, duration=0, expirationTime=0, display=false},
@@ -138,6 +139,7 @@ local function GetPlayerAuraInfo(id, filter)
 			return true, count, duration, expirationTime;
 		end
 	end
+	return false, 0, 0, 0
 end
 
 local function GetPlayerBuffInfo(id)
@@ -169,7 +171,7 @@ local function GetBaseValueRecursion(self)
 	local value = self:GetValue()
 	local pBar = self.pBar
 	if pBar then
-		value = GetBaseValueRecursion(pBar)
+		value = value + GetBaseValueRecursion(pBar)
 	end
 	return value
 end
@@ -412,6 +414,20 @@ function VilinkasInsanityMark:SetOffset(offset)
 	self:ClearAllPoints()
 	self:SetPoint("TOPLEFT", parent, "TOPLEFT", parentWidth * offset - markHalfWidth, 0)
 	self:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -parentWidth * (1 - offset) + markHalfWidth, 0)
+end
+
+VilinkasInsanityVoidformThresholdMark = {}
+
+function VilinkasInsanityVoidformThresholdMark:OnVoidformStart()
+	if auras.vform.thresholdHideInVoidform then
+		self:Hide()
+	end
+end
+
+function VilinkasInsanityVoidformThresholdMark:OnVoidformEnd()
+	if auras.vform.thresholdShow then
+		self:Show()
+	end
 end
 
 VilinkasInsanityExtraFrame = {}
@@ -919,11 +935,11 @@ local function GetInsanityDrain(stack)
 	return 6 + ((stack - 1) * (0.8) * auras.vform.drainMod)
 end
 
-local function GetVoidformTime(currentTime)
+local function GetVoidformTime(currTime)
 	local vform = auras.vform
 	if player.insanity > 0 and vform.stacks > 0 then
 		-- Drain current stack
-		local vfCurrStackTimeLeft = 1.0 - (currentTime - vform.currentStackTime)-- + select(4, GetNetStats()) / 1000
+		local vfCurrStackTimeLeft = 1.0 - (currTime - vform.currentStackTime)-- + select(4, GetNetStats()) / 1000
 		local vfCurrStackDrain = GetInsanityDrain(vform.drainStacks)
 		if ((vfCurrStackDrain * vfCurrStackTimeLeft) > player.insanity) then
 			vfCurrStackTimeLeft = player.insanity / vfCurrStackDrain
@@ -1067,25 +1083,6 @@ function VilinkasInsnaity:UpdatePlayerState()
 	self:UpdatePower()
 end
 
-local function UpdateText(currentTime)
-	local castGain = player.currentCastInsanityGain
-	local castGainText = castGain > 0 and "|c" .. castHexColor .. castGain .. "|r + " or ""
-	local passiveGain = player.passiveInsanityGain
-	local passiveGainText = passiveGain > 0 and "|c" .. asHexColor .. passiveGain .. "|r + " or ""
-	VilinkasInsnaity.RightText:SetText(castGainText .. passiveGainText .. player.insanity)
-	local vform = auras.vform
-	if (vform.stacks > 0) then
-		VilinkasInsnaity.CenterText:SetText(format("%d (%d%%)", vform.stacks, player.haste))
-		VilinkasInsnaity.LeftText:SetText(format("%.1f (%d)", GetVoidformTime(currentTime), vform.drainStacks))
-	elseif (auras.linsanity.stacks > 0) and auras.linsanity.display then
-		VilinkasInsnaity.CenterText:SetText(format("%d", auras.linsanity.stacks))
-		VilinkasInsnaity.LeftText:SetText("")
-	else
-		VilinkasInsnaity.CenterText:SetText("")
-		VilinkasInsnaity.LeftText:SetText("")
-	end
-end
-
 VilinkasInsnaity.ExtraBars = {}
 
 function VilinkasInsnaity:OnLoad()
@@ -1100,6 +1097,8 @@ function VilinkasInsnaity:OnLoad()
 
 	self.nBar = self.CastGainBar
 	self.CastGainBar.pBar = self
+	self.CastGainBar.nBar = self.PassiveGainBar
+	self.PassiveGainBar.pBar = self.CastGainBar
 
 	self.ExtraBarsDock = {
 		["TOP_OUTSIDE"] = {},
@@ -1130,7 +1129,21 @@ local function VilinkasInsnaity_OnUpdate(self)
 
 		local castGainText = castGain > 0 and "|c" .. castHexColor .. castGain .. "|r + " or ""
 		local passiveGainText = passiveGain > 0 and "|c" .. asHexColor .. passiveGain .. "|r + " or ""
-		self.RightText:SetText(castGainText .. passiveGainText .. self:GetValue())
+		self.RightText:SetText(passiveGainText .. castGainText .. self:GetValue())
+
+		local vform = auras.vform
+		if (vform.stacks > 0) then
+			self.CenterText:SetText(format("%d (%d%%)", vform.stacks, player.haste))
+			self.LeftText:SetText(format("%.1f (%d)", GetVoidformTime(currTime), vform.drainStacks))
+		elseif (auras.linsanity.stacks > 0) and auras.linsanity.display then
+			self.CenterText:SetText(format("%d", auras.linsanity.stacks))
+			self.LeftText:SetText("")
+		else
+			self.CenterText:SetText("")
+			self.LeftText:SetText("")
+		end
+
+		self.PassiveGainBar:SetValue(passiveGain)
 
 		self.lastUpdateTime = currTime
 	end
@@ -1191,10 +1204,9 @@ function VilinkasInsnaity:Setup()
 end
 
 function VilinkasInsnaity:UpdateAuras()
-	auras.linsanity.active, auras.linsanity.stacks = GetPlayerBuffInfo(auras.vtorrent.id)
+	auras.linsanity.active, auras.linsanity.stacks = GetPlayerBuffInfo(auras.linsanity.id)
 end
 
---VilinkasInsnaity:SetScript("OnEvent", function(self, event, ...)
 function VilinkasInsnaity:OnEvent(event, ...)
 	if (event == "ADDON_LOADED") then
 		local addonName = ...;
@@ -1284,6 +1296,7 @@ function VilinkasInsnaity:OnEvent(event, ...)
 					vform.currentStackTime = GetTime()
 					vform.drainStacks = 1
 					vform.active, vform.stacks = GetPlayerBuffInfo(vform.id)
+					self.VoidformTreshold:OnVoidformStart()
 					CreateVfRep()
 				elseif logEvent == "SPELL_AURA_APPLIED_DOSE" then
 					local vform = auras.vform
@@ -1299,6 +1312,7 @@ function VilinkasInsnaity:OnEvent(event, ...)
 					vform.drainStacks = 0
 					vform.stacks = 0
 					vform.currentStackTime = 0
+					self.VoidformTreshold:OnVoidformEnd()
 					FinaliseVfRep()
 				end
 			-- Surrender to Madness --
@@ -1320,6 +1334,7 @@ function VilinkasInsnaity:OnEvent(event, ...)
 		end
 		if logEvent == "UNIT_DIED" then
 			if destGUID == UnitGUID("player") then
+				self.VoidformTreshold:OnVoidformEnd()
 				if auras.vform.stacks > 0 then
 					FinaliseVfRep()
 				end
@@ -1437,7 +1452,7 @@ function VilinkasInsnaity:UpdateSettings()
                 general = {
                     x = 0,
                     y = 0,
-                    width = 260,
+                    width = 300,
                     height = 40,
                     oocalpha = 0.3,
 					anchor = "SCREEN",
@@ -1673,7 +1688,9 @@ function VilinkasInsnaity:UpdateSettings()
 		self.VoidformTreshold:SetWidth(db.bars.main.voidformthreshold.thickness)
 		self.VoidformTreshold.Texture:SetVertexColor(unpack(db.bars.main.voidformthreshold.color))
 		self.VoidformTreshold:Show()
+		auras.vform.thresholdShow = true
 	else
+		auras.vform.thresholdShow = false
 		self.VoidformTreshold:Hide()
 	end
 	self:UpdateMaxPower()
@@ -1737,9 +1754,9 @@ function VilinkasInsnaity:UpdateSettings()
 	auras.linsanity.display = true
 
 	-- STM reporting --
-	reports.display = db.misc.vfdisreportingenabled
-	reports.save = db.misc.vfsavereportingenabled
-	reports.maxSaved = db.misc.vfreportingmaxsaved
+	reports.display = db.misc.voidfromreports.enable
+	reports.save = db.misc.voidfromreports.save
+	reports.maxSaved = db.misc.voidfromreports.maxsaved
 end
 
 SLASH_VilinkasInsanity1, SLASH_VilinkasInsanity2 = "/vilins", "/VilinkasInsanity"
