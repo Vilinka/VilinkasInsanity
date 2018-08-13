@@ -12,4 +12,5 @@ libs\CallbackHandler-1.0\CallbackHandler-1.0.xml
 libs\AceDB-3.0\AceDB-3.0.xml
 libs\LibSharedMedia-3.0\lib.xml
 
-VilinkasInsanity.lua
+media\SharedMedia.lua
+VilinkasInsanity.xml

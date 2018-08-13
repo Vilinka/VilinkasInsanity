@@ -13,3 +13,8 @@ libs\AceConfig-3.0\AceConfig-3.0.xml
 libs\AceGUI-3.0-SharedMediaWidgets\widget.xml
 
 VilinkasInsanityOptions.lua
+General.lua
+Bars.lua
+Text.lua
+Animations.lua
+Misc.lua
