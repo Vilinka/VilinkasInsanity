@@ -107,8 +107,8 @@ local function OnMouseUp()
 	VilinkasInsanityBar:StopMovingOrSizing()
 	local point, _, _, xOffset, yOffset = VilinkasInsanityBar:GetPoint(1)
 	xOffset, yOffset = GetPositionRelToCenter(point, xOffset, yOffset)
-	VilinkasInsanityBar.db.profile.general.posx = xOffset
-	VilinkasInsanityBar.db.profile.general.posy = yOffset
+	VilinkasInsanityBar.db.profile.general.x = xOffset
+	VilinkasInsanityBar.db.profile.general.y = yOffset
 	AceConfigDialog:Open("VilinkasInsanityOptions", container)
 end
 
