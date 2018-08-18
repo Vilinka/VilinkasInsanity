@@ -1231,7 +1231,7 @@ function VilinkasInsnaity:OnEvent(event, ...)
 	elseif (event == "ACTIVE_TALENT_GROUP_CHANGED") then
 		self:Setup()
 	elseif (event == "PLAYER_TALENT_UPDATE") then
-		if GetSpecialization() == player.shadowSpec then
+		if (GetSpecialization() == player.shadowSpec) then
 			talents.lotvoid.active = select(4, GetTalentInfo(talents.lotvoid.tier, talents.lotvoid.column, 1))
 			talents.fotmind.active = select(4, GetTalentInfo(talents.fotmind.tier, talents.fotmind.column, 1))
 			if not talents.aspirits.active then
@@ -1239,6 +1239,7 @@ function VilinkasInsnaity:OnEvent(event, ...)
 				talents.aspirits.count = 0
 			end
 			self:UpdateMaxPower()
+			self.ManaBar:UpdateMaxPower()
 		end
 	elseif (event == "UNIT_POWER_FREQUENT") then
 		self:UpdatePower()
