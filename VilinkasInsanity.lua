@@ -656,14 +656,15 @@ local function VilinkasInsanityShadowfiend_OnUpdate(self)
 	end
 end
 
-function VilinkasInsanityShadowfiend:Setup(active)
-	self.active = active
+function VilinkasInsanityShadowfiend:Setup()
 	if (self.active) then
 		self:RegisterEvent("PLAYER_ENTERING_WORLD")
 		self:RegisterEvent("PLAYER_TALENT_UPDATE")
 		self:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 		self:SetScript("OnUpdate", VilinkasInsanityShadowfiend_OnUpdate)
 		self:UpdateTalents()
+		self:Activate()
+		self:SetPlayerGUID()
 	else
 		self:UnregisterEvent("PLAYER_ENTERING_WORLD")
 		self:UnregisterEvent("PLAYER_TALENT_UPDATE")
@@ -674,10 +675,14 @@ function VilinkasInsanityShadowfiend:Setup(active)
 	self:Hide()
 end
 
+function VilinkasInsanityShadowfiend:SetPlayerGUID()
+	self.playerGuid = UnitGUID("player")
+end
+
 function VilinkasInsanityShadowfiend:OnEvent(event, ...)
 	if (event == "PLAYER_ENTERING_WORLD") then
 		self:Activate()
-		self.playerGuid = UnitGUID("player")
+		self:SetPlayerGUID()
 	elseif (event == "PLAYER_TALENT_UPDATE") then
 		self:UpdateTalents()
 	elseif (event == "COMBAT_LOG_EVENT_UNFILTERED") then
@@ -734,7 +739,7 @@ function VilinkasInsanityShadowfiend:UpdateSettings(newSettings)
 	local active = sfSettings.enable
 	VilinkasInsanityExtraFrame.UpdateSettings(self, height, active)
 
-	self:Setup(active)
+	self:Setup()
 
 	self.deplete = sfSettings.deplete
 
