@@ -1235,6 +1235,13 @@ function VilinkasInsnaity:OnEvent(event, ...)
 		end
 	elseif (event == "ACTIVE_TALENT_GROUP_CHANGED") then
 		self:Setup()
+		player.inCombat = UnitAffectingCombat("player")
+		if player.inCombat then
+			self.FadeoutAnim:Stop()
+			self:SetAlpha(1)
+		else
+			self.FadeoutAnim:Play()
+		end
 	elseif (event == "PLAYER_TALENT_UPDATE") then
 		if (GetSpecialization() == player.shadowSpec) then
 			talents.lotvoid.active = select(4, GetTalentInfo(talents.lotvoid.tier, talents.lotvoid.column, 1))
