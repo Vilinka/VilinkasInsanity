@@ -937,7 +937,7 @@ end
 VilinkasInsnaity = {}
 
 local function GetInsanityDrain(stack)
-	return 6 + ((stack - 1) * (0.8) * auras.vform.drainMod)
+	return 6 + ((stack - 1) * (0.68) * auras.vform.drainMod)
 end
 
 local function GetVoidformTime(currTime)
@@ -951,9 +951,10 @@ local function GetVoidformTime(currTime)
 			return vfCurrStackTimeLeft
 		else
 			local ins = player.insanity - (vfCurrStackDrain * vfCurrStackTimeLeft)
-			-- Sum d+(x-1)*f*dm, Sum x=m to n => (-1/2)*(m-n-1)*(2*d+f*dm*(m+n-2))=ins => Solve for n, d=6, f=(0.8)
+			-- Sum d+(x-1)*f*dm, Sum x=m to n => (-1/2)*(m-n-1)*(2*d+f*dm*(m+n-2))=ins => Solve for n, d=6, f=(0.68)
 			local dm, m = vform.drainMod, vform.drainStacks + 1 -- We already drained current stack
-			local vfRemStacks = (sqrt(dm*dm*(2*m-3)*(2*m-3)+dm*10*(ins+6*m-9)+225)+dm-15) / (2*dm)
+			--local vfRemStacks = (sqrt(dm*dm*(2*m-3)*(2*m-3)+dm*10*(ins+6*m-9)+225)+dm-15) / (2*dm)
+            local vfRemStacks = (10*sqrt(2.89*dm*dm*(3-2*m)*(3-2*m)+dm*(204*m-(306-34*ins))+900)+17*dm-300) / (34*dm)
 			return vfCurrStackTimeLeft + (vfRemStacks - vform.drainStacks)
 		end
 	else

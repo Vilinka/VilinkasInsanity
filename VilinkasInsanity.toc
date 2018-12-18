@@ -1,4 +1,4 @@
-## Interface: 80000
+## Interface: 80100
 ## Author: Vilinka
 ## Version: @project-version@
 ## Title: Vilinka's Insanity
