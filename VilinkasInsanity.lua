@@ -29,6 +29,7 @@ local auras = {
 	stmbuff = {id=193223, active=false, imul=2},
 	stmdebuff = {id=263406, active=false, duration=0, expirationTime=0, display=false},
 	linsanity = {id=197937, active=false, stacks=0, display=false},
+    mold = { id=298357, active=false, imul=2, duration=0, expirationTime=0, display=true },
 }
 local sfiend = {id=254232, active=false, display=false, duration=0, expirationTime=0,
 	lastAttackTime=0, baseAttackSpeed=1.5, guid=nil, igain=2, idLeech=262485}
@@ -51,6 +52,9 @@ local spellInsanityGain = {
 		if auras.stmbuff.active then
 			imul = imul * auras.stmbuff.imul
 		end
+        if auras.mold.active then
+			imul = imul * auras.mold.imul
+		end
 		return 12 * imul
 	end,
 	-- Shadow Word: Void
@@ -59,6 +63,9 @@ local spellInsanityGain = {
 		if auras.stmbuff.active then
 			imul = imul * auras.stmbuff.imul
 		end
+        if auras.mold.active then
+			imul = imul * auras.mold.imul
+		end
 		return 15 * imul
 	end,
 	-- Vampiric Touch
@@ -66,6 +73,9 @@ local spellInsanityGain = {
 		local imul = 1
 		if auras.stmbuff.active then
 			imul = imul * auras.stmbuff.imul
+		end
+        if auras.mold.active then
+			imul = imul * auras.mold.imul
 		end
 		return 6 * imul
 	end,
@@ -78,6 +88,9 @@ local spellInsanityGain = {
 		if auras.stmbuff.active then
 			imul = imul * auras.stmbuff.imul
 		end
+        if auras.mold.active then
+			imul = imul * auras.mold.imul
+		end
 		return 3 * imul
 	end,
 	-- Mind sear
@@ -85,6 +98,9 @@ local spellInsanityGain = {
 		local imul = 1
 		if auras.stmbuff.active then
 			imul = imul * auras.stmbuff.imul
+		end
+        if auras.mold.active then
+			imul = imul * auras.mold.imul
 		end
 		return 3 * imul 
 	end,
@@ -94,6 +110,9 @@ local spellInsanityGain = {
 		if auras.stmbuff.active then
 			imul = imul * auras.stmbuff.imul
 		end
+        if auras.mold.active then
+			imul = imul * auras.mold.imul
+		end
 		return 30 * imul
 	end,
 	-- Shadow crash
@@ -101,6 +120,9 @@ local spellInsanityGain = {
 		local imul = 1
 		if auras.stmbuff.active then
 			imul = imul * auras.stmbuff.imul
+		end
+        if auras.mold.active then
+			imul = imul * auras.mold.imul
 		end
 		return 20 * imul
 	end,
@@ -791,6 +813,70 @@ function VilinkasInsanityShadowfiend:UpdateSettings(newSettings)
 	end
 end
 
+--[[ TODO
+function VilinkasInsanityMemoryOfLucidDreams:OnLoad()
+	VilinkasInsanityExtraFrame.OnLoad(self)
+
+	self:SetMinMaxValues(0, 1);
+end
+
+local function VilinkasInsanityMemoryOfLucidDreams_OnUpdate(self)
+	local currTime = GetTime();
+	local netTime = 0;--select(4, GetNetStats()) / 1000)
+	local pct = (currTime - self.start - netTime) / self.duration;
+	if (pct > 1) then
+		self:SetScript("OnUpdate", nil);
+		self:SetValue(0);
+		self:Hide();
+	else
+		if (self.deplete) then
+			self:SetValue(1-pct);
+		else
+			self:SetValue(pct);
+		end
+	end
+end
+
+function VilinkasInsanityMemoryOfLucidDreams:StartGcd(spellID)
+	local start, duration = GetSpellCooldown(spellID);
+	if (self.active) and (start > 0) then
+		self.start = start;
+		self.duration = duration;
+		self:Show();
+		self:SetScript("OnUpdate", VilinkasInsanityMemoryOfLucidDreams_OnUpdate);
+	end
+end
+
+function VilinkasInsanityMemoryOfLucidDreams:UpdateSettings(newSettings)
+	local gcdSettings = newSettings.bars.gcd
+	local height = gcdSettings.height
+	local active = gcdSettings.enable
+	VilinkasInsanityExtraFrame.UpdateSettings(self, height, active)
+
+	self.deplete = gcdSettings.deplete
+
+	if gcdSettings.background.enable then
+		self:SetBackdrop({
+			bgFile = LSM:Fetch("background", gcdSettings.background.texture),
+			tile = true,
+			tileSize=self:GetWidth(),
+		})
+		self:SetBackdropColor(unpack(gcdSettings.background.color))
+	else
+		self:SetBackdrop(nil)
+	end
+
+	local bartex
+	if newSettings.bars.useMainTexture then
+		bartex = LSM:Fetch("statusbar", newSettings.bars.main.texture)
+	else
+		bartex = LSM:Fetch("statusbar", gcdSettings.texture)
+	end
+	self:SetStatusBarTexture(bartex)
+	self:SetStatusBarColor(unpack(gcdSettings.color))
+end
+]]--
+
 VilinkasInsanityAuspiciousSpiritsTracker = {}
 
 function VilinkasInsanityAuspiciousSpiritsTracker:OnLoad()
@@ -1343,6 +1429,13 @@ function VilinkasInsnaity:OnEvent(event, ...)
 				elseif logEvent == "SPELL_AURA_REMOVED" then
 					auras.vtorrent.active = false
 				end
+            -- Memory of Lucid Dreams --
+			elseif spellId == auras.mold.id then
+				if logEvent == "SPELL_AURA_APPLIED" then
+					auras.mold.active = true
+				elseif logEvent == "SPELL_AURA_REMOVED" then
+					auras.mold.active = false
+				end
 			end
 		end
 		if logEvent == "UNIT_DIED" then
@@ -1356,6 +1449,7 @@ function VilinkasInsnaity:OnEvent(event, ...)
 				auras.vform.stacks = 0
 				auras.stmbuff.active = false
 				auras.vtorrent.active = false
+                auras.mold.active = false
 			end
 		end
 	end
